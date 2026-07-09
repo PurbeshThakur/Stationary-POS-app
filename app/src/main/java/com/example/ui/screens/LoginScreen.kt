@@ -41,7 +41,7 @@ fun LoginScreen(
     viewModel: InventoryViewModel,
     onLoginSuccess: () -> Unit
 ) {
-    val users = viewModel.usersList
+    val users by viewModel.usersListState.collectAsState()
     var selectedUser by remember { mutableStateOf<User?>(null) }
     var pinText by remember { mutableStateOf("") }
     var pinVisible by remember { mutableStateOf(false) }
@@ -285,11 +285,11 @@ fun LoginScreen(
 
                                     Button(
                                         onClick = {
-                                            if (viewModel.login(user.username, pinText)) {
+                                            if (viewModel.login(user.username, pinText) == "SUCCESS") {
                                                 onLoginSuccess()
                                             } else {
                                                 showError = true
-                                                errorMessage = "Incorrect security PIN. Please try again."
+                                                errorMessage = if (users.find { it.username == user.username }?.isEnabled == false) "This staff profile is currently disabled. Please contact the system administrator." else "Incorrect security PIN. Please try again."
                                                 pinText = ""
                                             }
                                         },

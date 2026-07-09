@@ -32,6 +32,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InventoryScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.LoginScreen
+import com.example.ui.screens.SuperAdminScreen
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -52,6 +53,7 @@ sealed class NavigationItem(val route: String, val title: String, val icon: Imag
     object Reports : NavigationItem("reports", "Reports", Icons.Default.QueryStats)
     object AIAdvisor : NavigationItem("ai_advisor", "AI Advisor", Icons.Default.AutoAwesome)
     object CloudSync : NavigationItem("cloud_sync", "Cloud Sync", Icons.Default.Backup)
+    object Admin : NavigationItem("super_admin", "Admin", Icons.Default.AdminPanelSettings)
 }
 
 @Composable
@@ -66,13 +68,19 @@ fun MainAppLayout() {
         )
     } else {
         val navController = rememberNavController()
-        val navItems = listOf(
-            NavigationItem.POS,
-            NavigationItem.Inventory,
-            NavigationItem.Reports,
-            NavigationItem.AIAdvisor,
-            NavigationItem.CloudSync
-        )
+        val navItems = remember(loggedInUser) {
+            val list = mutableListOf(
+                NavigationItem.POS,
+                NavigationItem.Inventory,
+                NavigationItem.Reports,
+                NavigationItem.AIAdvisor,
+                NavigationItem.CloudSync
+            )
+            if (loggedInUser?.isSuperAdmin == true || loggedInUser?.role == com.example.ui.UserRole.ADMIN) {
+                list.add(NavigationItem.Admin)
+            }
+            list
+        }
 
         val lastSentSms by viewModel.lastSentSms.collectAsState()
         
@@ -149,6 +157,9 @@ fun MainAppLayout() {
                     }
                     composable(NavigationItem.CloudSync.route) {
                         com.example.ui.screens.CloudSyncScreen(viewModel = viewModel)
+                    }
+                    composable(NavigationItem.Admin.route) {
+                        SuperAdminScreen(viewModel = viewModel)
                     }
                 }
 

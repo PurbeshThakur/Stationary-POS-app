@@ -52,10 +52,12 @@ fun ReportsScreen(
     }
 
     val currentRole by viewModel.currentUserRole.collectAsState()
+    val loggedInUser by viewModel.loggedInUser.collectAsState()
     var unlockPin by remember { mutableStateOf("") }
     var unlockError by remember { mutableStateOf(false) }
 
-    if (currentRole == com.example.ui.UserRole.CASHIER) {
+    val canView = loggedInUser?.canViewReports == true || currentRole == com.example.ui.UserRole.ADMIN
+    if (!canView) {
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -137,7 +139,8 @@ fun ReportsScreen(
 
                         Button(
                             onClick = {
-                                if (unlockPin == "1234") {
+                                val authUser = viewModel.usersList.find { it.pin == unlockPin && it.isEnabled && (it.role == com.example.ui.UserRole.ADMIN || it.canViewReports) }
+                                if (authUser != null) {
                                     viewModel.setUserRole(com.example.ui.UserRole.ADMIN)
                                     unlockPin = ""
                                 } else {

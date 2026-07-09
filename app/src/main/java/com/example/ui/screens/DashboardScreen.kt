@@ -209,17 +209,112 @@ fun DashboardScreen(
             )
         }
     ) { paddingValues ->
+        val loggedInUser by viewModel.loggedInUser.collectAsState()
+        val currentRole by viewModel.currentUserRole.collectAsState()
+        val canPerformSale = loggedInUser?.canPerformSale == true || currentRole == com.example.ui.UserRole.ADMIN
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            if (!canPerformSale) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(20.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Lock",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "POS Terminal Restricted",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Text(
+                                text = "Your cashier profile does not have permission to perform sales. Please contact the administrator or enter an authorized PIN to elevate access.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                textAlign = TextAlign.Center
+                            )
+
+                            var pinVal by remember { mutableStateOf("") }
+                            var pinErr by remember { mutableStateOf(false) }
+
+                            OutlinedTextField(
+                                value = pinVal,
+                                onValueChange = {
+                                    pinVal = it
+                                    pinErr = false
+                                },
+                                label = { Text("Enter Authorized Admin PIN") },
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                isError = pinErr,
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            if (pinErr) {
+                                Text(
+                                    text = "Incorrect PIN. Try default '1111' or '1234'.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    val authUser = viewModel.usersList.find { it.pin == pinVal && it.isEnabled && (it.role == com.example.ui.UserRole.ADMIN || it.canPerformSale) }
+                                    if (authUser != null) {
+                                        viewModel.setUserRole(com.example.ui.UserRole.ADMIN)
+                                        pinVal = ""
+                                    } else {
+                                        pinErr = true
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.VerifiedUser, contentDescription = "Verify")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Elevate Terminal")
+                            }
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 item { Spacer(modifier = Modifier.height(8.dp)) }
 
                 // Quick Statistics Cards Row
@@ -608,6 +703,7 @@ fun DashboardScreen(
             }
         }
     }
+}
 
     // --- Checkout Confirmation Dialog ---
     if (showCheckoutDialog) {
@@ -863,7 +959,8 @@ fun DashboardScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (roleUnlockPin == "1234") {
+                        val authAdmin = viewModel.usersList.find { it.pin == roleUnlockPin && it.isEnabled && it.role == com.example.ui.UserRole.ADMIN }
+                        if (authAdmin != null) {
                             viewModel.setUserRole(com.example.ui.UserRole.ADMIN)
                             showRoleUnlockDialog = false
                             roleUnlockPin = ""

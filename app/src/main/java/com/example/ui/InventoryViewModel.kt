@@ -23,12 +23,28 @@ enum class UserRole(val label: String) {
     CASHIER("Cashier/Staff")
 }
 
+@com.squareup.moshi.JsonClass(generateAdapter = true)
 data class User(
     val username: String,
     val role: UserRole,
     val pin: String,
     val fullName: String,
-    val avatarColor: Long
+    val avatarColor: Long,
+    val isEnabled: Boolean = true,
+    val canManageInventory: Boolean = true,
+    val canViewReports: Boolean = true,
+    val canPerformSale: Boolean = true,
+    val canUseAiAdvisor: Boolean = true,
+    val isSuperAdmin: Boolean = false
+)
+
+@com.squareup.moshi.JsonClass(generateAdapter = true)
+data class AuditLog(
+    val timestamp: Long,
+    val username: String,
+    val fullName: String,
+    val action: String,
+    val details: String = ""
 )
 
 data class SmsAlert(
@@ -54,6 +70,85 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val cloudService = CloudBackupService()
     private val googleDriveService = GoogleDriveBackupService()
     private val sharedPrefs = application.getSharedPreferences("stationery_backup_prefs", Context.MODE_PRIVATE)
+
+    private val moshi = com.squareup.moshi.Moshi.Builder()
+        .addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
+        .build()
+
+    private val userListAdapter = moshi.adapter<List<User>>(
+        com.squareup.moshi.Types.newParameterizedType(List::class.java, User::class.java)
+    )
+
+    private val auditLogAdapter = moshi.adapter<List<AuditLog>>(
+        com.squareup.moshi.Types.newParameterizedType(List::class.java, AuditLog::class.java)
+    )
+
+    private val defaultUsers = listOf(
+        User("admin", UserRole.ADMIN, "1234", "System Administrator", 0xFF6200EE, isSuperAdmin = true),
+        User("purbesh", UserRole.ADMIN, "1111", "Purbesh (Admin)", 0xFF00C853, isSuperAdmin = true),
+        User("staff", UserRole.CASHIER, "0000", "Stationery Cashier", 0xFFFFAB00, canViewReports = false, canManageInventory = false, canUseAiAdvisor = false),
+        User("anjali", UserRole.CASHIER, "2222", "Anjali (Staff)", 0xFF00B0FF, canViewReports = false, canManageInventory = false, canUseAiAdvisor = false)
+    )
+
+    private val _usersListState = MutableStateFlow<List<User>>(emptyList())
+    val usersListState: StateFlow<List<User>> = _usersListState.asStateFlow()
+
+    private val _auditLogs = MutableStateFlow<List<AuditLog>>(emptyList())
+    val auditLogs: StateFlow<List<AuditLog>> = _auditLogs.asStateFlow()
+
+    init {
+        loadUsersAndLogs()
+    }
+
+    private fun loadUsersAndLogs() {
+        val usersJson = sharedPrefs.getString("users_list_json", null)
+        if (usersJson != null) {
+            try {
+                val list = userListAdapter.fromJson(usersJson)
+                if (list != null) {
+                    _usersListState.value = list
+                } else {
+                    _usersListState.value = defaultUsers
+                }
+            } catch (e: Exception) {
+                Log.e("InventoryViewModel", "Error parsing users JSON", e)
+                _usersListState.value = defaultUsers
+            }
+        } else {
+            _usersListState.value = defaultUsers
+            saveUsersList(defaultUsers)
+        }
+
+        val logsJson = sharedPrefs.getString("audit_logs_json", null)
+        if (logsJson != null) {
+            try {
+                val list = auditLogAdapter.fromJson(logsJson)
+                if (list != null) {
+                    _auditLogs.value = list
+                }
+            } catch (e: Exception) {
+                Log.e("InventoryViewModel", "Error parsing audit logs JSON", e)
+            }
+        }
+    }
+
+    private fun saveUsersList(list: List<User>) {
+        try {
+            val json = userListAdapter.toJson(list)
+            sharedPrefs.edit().putString("users_list_json", json).apply()
+        } catch (e: Exception) {
+            Log.e("InventoryViewModel", "Error saving users list", e)
+        }
+    }
+
+    private fun saveAuditLogs(list: List<AuditLog>) {
+        try {
+            val json = auditLogAdapter.toJson(list)
+            sharedPrefs.edit().putString("audit_logs_json", json).apply()
+        } catch (e: Exception) {
+            Log.e("InventoryViewModel", "Error saving audit logs", e)
+        }
+    }
 
     private val _cloudBackupState = MutableStateFlow<CloudBackupState>(CloudBackupState.Idle)
     val cloudBackupState: StateFlow<CloudBackupState> = _cloudBackupState.asStateFlow()
@@ -111,12 +206,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         _cloudBackupState.value = CloudBackupState.Idle
     }
 
-    val usersList = listOf(
-        User("admin", UserRole.ADMIN, "1234", "System Administrator", 0xFF6200EE),
-        User("purbesh", UserRole.ADMIN, "1111", "Purbesh (Admin)", 0xFF00C853),
-        User("staff", UserRole.CASHIER, "0000", "Stationery Cashier", 0xFFFFAB00),
-        User("anjali", UserRole.CASHIER, "2222", "Anjali (Staff)", 0xFF00B0FF)
-    )
+    val usersList: List<User> get() = _usersListState.value
 
     private val _loggedInUser = MutableStateFlow<User?>(null)
     val loggedInUser: StateFlow<User?> = _loggedInUser.asStateFlow()
@@ -125,18 +215,22 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val _currentUserRole = MutableStateFlow(UserRole.CASHIER) // Default to cashier to enforce restriction initially
     val currentUserRole: StateFlow<UserRole> = _currentUserRole.asStateFlow()
 
-    fun login(username: String, pin: String): Boolean {
-        val user = usersList.find { it.username.equals(username, ignoreCase = true) && it.pin == pin }
-        return if (user != null) {
-            _loggedInUser.value = user
-            _currentUserRole.value = user.role
-            true
-        } else {
-            false
+    fun login(username: String, pin: String): String {
+        val user = usersList.find { it.username.equals(username, ignoreCase = true) }
+        if (user == null || user.pin != pin) {
+            return "INVALID_PIN"
         }
+        if (!user.isEnabled) {
+            return "DISABLED"
+        }
+        _loggedInUser.value = user
+        _currentUserRole.value = user.role
+        logAction("Logged In", "Success")
+        return "SUCCESS"
     }
 
     fun logout() {
+        logAction("Logged Out", "Success")
         _loggedInUser.value = null
     }
 
@@ -147,6 +241,60 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         if (current != null && current.role != role) {
             _loggedInUser.value = current.copy(role = role)
         }
+    }
+
+    fun logAction(action: String, details: String = "") {
+        val user = _loggedInUser.value ?: return
+        val newLog = AuditLog(
+            timestamp = System.currentTimeMillis(),
+            username = user.username,
+            fullName = user.fullName,
+            action = action,
+            details = details
+        )
+        val currentLogs = _auditLogs.value.toMutableList()
+        currentLogs.add(0, newLog)
+        val trimmed = if (currentLogs.size > 500) currentLogs.take(500) else currentLogs
+        _auditLogs.value = trimmed
+        saveAuditLogs(trimmed)
+    }
+
+    fun addOrUpdateUser(user: User) {
+        val current = _usersListState.value.toMutableList()
+        val index = current.indexOfFirst { it.username.equals(user.username, ignoreCase = true) }
+        if (index != -1) {
+            current[index] = user
+            logAction("Updated User Profile", "User: ${user.username}, Role: ${user.role.label}")
+        } else {
+            current.add(user)
+            logAction("Created User Profile", "User: ${user.username}, Role: ${user.role.label}")
+        }
+        _usersListState.value = current
+        saveUsersList(current)
+
+        // If the logged-in user edited themselves, update logged-in user state immediately
+        val loggedIn = _loggedInUser.value
+        if (loggedIn != null && loggedIn.username.equals(user.username, ignoreCase = true)) {
+            _loggedInUser.value = user
+            _currentUserRole.value = user.role
+        }
+    }
+
+    fun deleteUser(username: String) {
+        val current = _usersListState.value.toMutableList()
+        val toRemove = current.find { it.username.equals(username, ignoreCase = true) }
+        if (toRemove != null) {
+            current.remove(toRemove)
+            _usersListState.value = current
+            saveUsersList(current)
+            logAction("Deleted User Profile", "User: $username")
+        }
+    }
+
+    fun clearAuditLogs() {
+        _auditLogs.value = emptyList()
+        saveAuditLogs(emptyList())
+        logAction("Cleared System Audit Logs", "Done")
     }
 
     // SMS Logs
@@ -299,6 +447,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
             val success = repository.executeSale(sale, saleItems)
             if (success) {
+                logAction("Completed Sale", "Total: NPR ${String.format("%.2f", totalAmount)}, Mode: $paymentMode")
                 // Generate a formatted receipt for print/sharing
                 val receipt = buildFormattedReceipt(sale, saleItems, customerPhone)
                 _checkoutReceipt.value = receipt
@@ -364,6 +513,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 minStockThreshold = threshold
             )
             repository.insertProduct(product)
+            logAction("Added Product", "Name: $name, Barcode: $barcode, Qty: $stock")
         }
     }
 
@@ -371,6 +521,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateProductInInventory(product: Product) {
         viewModelScope.launch {
             repository.updateProduct(product)
+            logAction("Updated Product", "Name: ${product.name}, Stock: ${product.stockQuantity}")
         }
     }
 
@@ -378,6 +529,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteProductFromInventory(product: Product) {
         viewModelScope.launch {
             repository.deleteProduct(product)
+            logAction("Deleted Product", "Name: ${product.name}")
         }
     }
 
