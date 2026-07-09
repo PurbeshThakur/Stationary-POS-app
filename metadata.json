@@ -1,0 +1,6 @@
+{
+  "name": "Purbesh Stationary",
+  "description": "Stationery Shop Inventory & Point-of-Sale app with ML Kit barcode scanning, receipt sharing, low stock alerts, and AI-powered sales-increasing recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
