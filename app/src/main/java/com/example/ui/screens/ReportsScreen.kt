@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.Sale
 import com.example.data.SaleItem
 import com.example.ui.InventoryViewModel
+import com.example.ui.Expense
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -37,15 +38,26 @@ fun ReportsScreen(
     val context = LocalContext.current
     val sales by viewModel.allSales.collectAsState()
     val saleItems by viewModel.allSaleItems.collectAsState()
+    val expenses by viewModel.expensesListState.collectAsState()
+    val shopName by viewModel.shopName.collectAsState()
+
+    // Tab state: 0 = Sales & Export, 1 = Expenses & Bills
+    var selectedTabState by remember { mutableStateOf(0) }
 
     // Dialog state for viewing a past transaction's receipt
     var selectedSaleReceipt by remember { mutableStateOf<String?>(null) }
     var selectedSaleId by remember { mutableStateOf<Int?>(null) }
 
+    // Dialog state for logging new expense
+    var showAddExpenseDialog by remember { mutableStateOf(false) }
+
     // Aggregate statistics
     val totalRevenue = remember(sales) { sales.sumOf { it.totalAmount } }
-    val totalProfit = remember(sales) { sales.sumOf { it.totalProfit } }
-    val totalCost = remember(totalRevenue, totalProfit) { (totalRevenue - totalProfit).coerceAtLeast(0.0) }
+    val totalSalesProfit = remember(sales) { sales.sumOf { it.totalProfit } }
+    val totalCostOfGoods = remember(totalRevenue, totalSalesProfit) { (totalRevenue - totalSalesProfit).coerceAtLeast(0.0) }
+    val totalExpenses = remember(expenses) { expenses.sumOf { it.amount } }
+    val netProfit = remember(totalSalesProfit, totalExpenses) { totalSalesProfit - totalExpenses }
+
     val transactionCount = remember(sales) { sales.size }
     val avgOrderValue = remember(totalRevenue, transactionCount) {
         if (transactionCount > 0) totalRevenue / transactionCount else 0.0
@@ -159,376 +171,734 @@ fun ReportsScreen(
         }
     } else {
         Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF4A4458)),
-                            contentAlignment = Alignment.Center
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.QueryStats,
-                                contentDescription = "Reports",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF4A4458)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QueryStats,
+                                    contentDescription = "Reports",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    "Financial Reports",
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "Shop Performance & Metrics",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF938F99)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    )
+                )
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                // Custom Capsule Navigation Tabs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ElevatedFilterChip(
+                        selected = selectedTabState == 0,
+                        onClick = { selectedTabState = 0 },
+                        label = { Text("Sales & Exports") },
+                        leadingIcon = { Icon(Icons.Default.TrendingUp, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    ElevatedFilterChip(
+                        selected = selectedTabState == 1,
+                        onClick = { selectedTabState = 1 },
+                        label = { Text("Expenses Tracker") },
+                        leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (selectedTabState == 0) {
+                    // TAB 0: SALES PERFORMANCE & REPORT EXPORT
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item { Spacer(modifier = Modifier.height(4.dp)) }
+
+                        // High-Level Summary Card
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        "Overall Sales Summary",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.Start) {
+                                            Text("TOTAL REVENUE", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                            Text("NPR ${String.format("%.2f", totalRevenue)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.secondary)
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("SALES PROFIT", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                            Text("NPR ${String.format("%.2f", totalSalesProfit)}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF4CAF50))
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    HorizontalDivider()
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text("COST OF GOODS", fontSize = 10.sp, color = Color.Gray)
+                                            Text("NPR ${String.format("%.2f", totalCostOfGoods)}", fontWeight = FontWeight.Bold)
+                                        }
+                                        Column {
+                                            Text("TRANSACTIONS", fontSize = 10.sp, color = Color.Gray)
+                                            Text("$transactionCount", fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally))
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("AVG ORDER VALUE", fontSize = 10.sp, color = Color.Gray)
+                                            Text("NPR ${String.format("%.2f", avgOrderValue)}", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Premium Report Export Center Card
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Icon(Icons.Default.CloudDownload, contentDescription = "Export", tint = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            "Report Export Center",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Text(
+                                        "Generate instant audit logs and file reports directly from current store transaction metrics.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                // Export Excel / CSV
+                                                val csv = generateSalesCsv(sales)
+                                                com.example.util.ReceiptExporter.saveCsvReportToDownloads(context, csv, "Sales_Ledger")
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.GridOn, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Excel (CSV)")
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                // Export PDF via Android Print Engine
+                                                val reportStr = generateSalesSummaryReport(sales, totalRevenue, totalSalesProfit, totalCostOfGoods, transactionCount, shopName)
+                                                com.example.util.ReceiptExporter.printReceipt(context, reportStr, "Store_Sales_Report")
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Print (PDF)")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // History Log Header
+                        item {
+                            Text(
+                                text = "Sales Transaction Log",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                        Column {
+
+                        if (sales.isEmpty()) {
+                            item {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 40.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.QueryStats, contentDescription = "No Sales", tint = Color.LightGray, modifier = Modifier.size(64.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("No sales transactions yet.", color = Color.Gray)
+                                    Text("Go to POS Dashboard to start selling items!", fontSize = 12.sp, color = Color.LightGray)
+                                }
+                            }
+                        } else {
+                            items(sales) { sale ->
+                                val sdf = remember { SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault()) }
+                                val dateStr = sdf.format(Date(sale.timestamp))
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val matchedItems = saleItems.filter { it.saleId == sale.id }
+                                            selectedSaleId = sale.id
+                                            selectedSaleReceipt = buildFormattedReceiptForPastSale(sale, matchedItems, shopName)
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = when {
+                                                        sale.paymentMode.contains("Card", ignoreCase = true) -> Icons.Default.CreditCard
+                                                        sale.paymentMode.contains("Store Credit", ignoreCase = true) || sale.paymentMode.contains("Debt", ignoreCase = true) -> Icons.Default.AccountBalanceWallet
+                                                        sale.paymentMode.contains("Split", ignoreCase = true) -> Icons.Default.CallSplit
+                                                        else -> Icons.Default.Payments
+                                                    },
+                                                    contentDescription = "Mode",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Sale #${1000 + sale.id}",
+                                                    fontWeight = FontWeight.Bold,
+                                                    style = MaterialTheme.typography.bodyLarge
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(sale.paymentMode, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = dateStr,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = "NPR ${String.format("%.2f", sale.totalAmount)}",
+                                                fontWeight = FontWeight.Black,
+                                                color = MaterialTheme.colorScheme.secondary,
+                                                fontSize = 16.sp
+                                            )
+                                            Text(
+                                                text = "Profit: +NPR ${String.format("%.2f", sale.totalProfit)}",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF4CAF50),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item { Spacer(modifier = Modifier.height(40.dp)) }
+                    }
+                } else {
+                    // TAB 1: EXPENSES & BILL TRACKER
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item { Spacer(modifier = Modifier.height(4.dp)) }
+
+                        // Aggregated Metrics including Net Profit
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text(
+                                        "Expense & Bill Analytics",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text("SALES MARGINS", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                            Text("NPR ${String.format("%.2f", totalSalesProfit)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text("TOTAL EXPENSES", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                            Text("NPR ${String.format("%.2f", totalExpenses)}", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("NET INCOME", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                            val incomeColor = if (netProfit >= 0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+                                            Text("NPR ${String.format("%.2f", netProfit)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = incomeColor)
+                                        }
+                                    }
+
+                                    HorizontalDivider()
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "Net Income is calculated as: Total Product Profit - Logged Expenditures (utilities, rent, snacks, salary, etc.).",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add Expenditure Button
+                        item {
+                            Button(
+                                onClick = { showAddExpenseDialog = true },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Record/Log New Expense")
+                            }
+                        }
+
+                        // Expenses List Log
+                        item {
                             Text(
-                                "Financial Reports",
-                                fontWeight = FontWeight.SemiBold,
+                                text = "Logged Expense Ledger",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                fontWeight = FontWeight.Bold
                             )
-                            Text(
-                                "Shop Performance & Metrics",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
-                                color = Color(0xFF938F99)
+                        }
+
+                        if (expenses.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 40.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(Icons.Default.ReceiptLong, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(48.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("No expenses logged yet.", color = Color.Gray)
+                                    }
+                                }
+                            }
+                        } else {
+                            items(expenses) { expense ->
+                                val sdf = remember { SimpleDateFormat("dd MMM, yyyy", Locale.getDefault()) }
+                                val dateStr = sdf.format(Date(expense.timestamp))
+
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(expense.category.uppercase(), fontSize = 8.sp, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                                                }
+                                                Text(expense.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            }
+                                            if (expense.description.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(expense.description, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(dateStr, fontSize = 10.sp, color = Color.Gray)
+                                        }
+
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text(
+                                                text = "-NPR ${String.format("%.2f", expense.amount)}",
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.error,
+                                                fontSize = 14.sp
+                                            )
+                                            IconButton(
+                                                onClick = { viewModel.deleteExpense(expense.id) },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.LightGray, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item { Spacer(modifier = Modifier.height(40.dp)) }
+                    }
+                }
+            }
+        }
+
+        // --- Add Expense Dialog ---
+        if (showAddExpenseDialog) {
+            var expTitle by remember { mutableStateOf("") }
+            var expAmount by remember { mutableStateOf("") }
+            var expCategory by remember { mutableStateOf("Utilities") }
+            var expDesc by remember { mutableStateOf("") }
+            val categoriesList = listOf("Utilities", "Rent & Space", "Food & Refreshments", "Stock Purchase", "Salaries & Wage", "Office & Supplies", "Others")
+            var dropdownExpanded by remember { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = { showAddExpenseDialog = false },
+                title = { Text("Record Shop Expenditure", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = expTitle,
+                            onValueChange = { expTitle = it },
+                            label = { Text("Expense Title / Payee") },
+                            placeholder = { Text("e.g. NEA Electricity Bill") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = expAmount,
+                            onValueChange = { expAmount = it },
+                            label = { Text("Amount Paid (NPR)") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = expCategory,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Category") },
+                                trailingIcon = {
+                                    IconButton(onClick = { dropdownExpanded = true }) {
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().clickable { dropdownExpanded = true }
                             )
+                            DropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false },
+                                modifier = Modifier.fillMaxWidth(0.8f)
+                            ) {
+                                categoriesList.forEach { cat ->
+                                    DropdownMenuItem(
+                                        text = { Text(cat) },
+                                        onClick = {
+                                            expCategory = cat
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = expDesc,
+                            onValueChange = { expDesc = it },
+                            label = { Text("Description (Optional)") },
+                            singleLine = false,
+                            maxLines = 2,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val amt = expAmount.toDoubleOrNull() ?: 0.0
+                            if (expTitle.isNotBlank() && amt > 0.0) {
+                                viewModel.addExpense(
+                                    Expense(
+                                        id = UUID.randomUUID().toString(),
+                                        title = expTitle,
+                                        category = expCategory,
+                                        amount = amt,
+                                        timestamp = System.currentTimeMillis(),
+                                        description = expDesc
+                                    )
+                                )
+                                showAddExpenseDialog = false
+                            }
+                        },
+                        enabled = expTitle.isNotBlank() && expAmount.isNotBlank()
+                    ) {
+                        Text("Log Expense")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddExpenseDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // --- Past Sale Receipt Re-print / Share Dialog ---
+        if (selectedSaleReceipt != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    selectedSaleReceipt = null
+                    selectedSaleId = null
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.ReceiptLong, contentDescription = "Receipt", tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Invoice No: #${1000 + (selectedSaleId ?: 0)}", fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .background(Color(0xFFF9F9F9))
+                            .border(1.dp, Color.LightGray, RoundedCornerShape(4.dp))
+                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                            item {
+                                Text(
+                                    text = selectedSaleReceipt ?: "",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = Color.Black
+                                )
+                            }
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { Spacer(modifier = Modifier.height(8.dp)) }
-
-            // High-Level Summary Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Overall Shop Summary",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(horizontalAlignment = Alignment.Start) {
-                                Text("TOTAL REVENUE", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                                Text("NPR ${String.format("%.2f", totalRevenue)}", fontSize = 24.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.secondary)
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("NET PROFIT", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                                Text("NPR ${String.format("%.2f", totalProfit)}", fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color(0xFF4CAF50))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Divider()
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("COST OF GOODS", fontSize = 10.sp, color = Color.Gray)
-                                Text("NPR ${String.format("%.2f", totalCost)}", fontWeight = FontWeight.Bold)
-                            }
-                            Column {
-                                Text("TRANSACTIONS", fontSize = 10.sp, color = Color.Gray)
-                                Text("$transactionCount", fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterHorizontally))
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text("AVG ORDER VALUE", fontSize = 10.sp, color = Color.Gray)
-                                Text("NPR ${String.format("%.2f", avgOrderValue)}", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // History Log Header
-            item {
-                Text(
-                    text = "Sales Transaction Log",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (sales.isEmpty()) {
-                item {
+                confirmButton = {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 40.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.QueryStats, contentDescription = "No Sales", tint = Color.LightGray, modifier = Modifier.size(64.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("No sales transactions yet.", color = Color.Gray)
-                        Text("Go to POS Dashboard to start selling items!", fontSize = 12.sp, color = Color.LightGray)
-                    }
-                }
-            } else {
-                items(sales) { sale ->
-                    val sdf = remember { SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault()) }
-                    val dateStr = sdf.format(Date(sale.timestamp))
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                // Dynamically compile and show receipt
-                                val matchedItems = saleItems.filter { it.saleId == sale.id }
-                                selectedSaleId = sale.id
-                                selectedSaleReceipt = buildFormattedReceiptForPastSale(sale, matchedItems)
-                            },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = when (sale.paymentMode) {
-                                            "UPI" -> Icons.Default.QrCode
-                                            "Card" -> Icons.Default.CreditCard
-                                            else -> Icons.Default.Payments
-                                        },
-                                        contentDescription = "Mode",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Sale #${1000 + sale.id}",
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(sale.paymentMode, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = dateStr,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "NPR ${String.format("%.2f", sale.totalAmount)}",
-                                    fontWeight = FontWeight.Black,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    fontSize = 16.sp
-                                )
-                                Text(
-                                    text = "Profit: +NPR ${String.format("%.2f", sale.totalProfit)}",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF4CAF50),
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            item { Spacer(modifier = Modifier.height(40.dp)) }
-        }
-    }
-
-    // --- Past Sale Receipt Re-print / Share Dialog ---
-    if (selectedSaleReceipt != null) {
-        AlertDialog(
-            onDismissRequest = {
-                selectedSaleReceipt = null
-                selectedSaleId = null
-            },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.ReceiptLong, contentDescription = "Receipt", tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Invoice No: #${1000 + (selectedSaleId ?: 0)}", fontWeight = FontWeight.Bold)
-                }
-            },
-            text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(280.dp)
-                        .background(Color(0xFFF9F9F9))
-                        .border(1.dp, Color.LightGray, RoundedCornerShape(4.dp))
-                ) {
-                    LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                        item {
-                            Text(
-                                text = selectedSaleReceipt ?: "",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                color = Color.Black
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            val textToShare = selectedSaleReceipt ?: ""
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, textToShare)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Receipt Via"))
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Share")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Share Receipt / Send")
-                    }
-
-                    Button(
-                        onClick = {
-                            val textToShare = selectedSaleReceipt ?: ""
-                            val whatsappIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, textToShare)
-                                setPackage("com.whatsapp")
-                            }
-                            try {
-                                context.startActivity(whatsappIntent)
-                            } catch (e: Exception) {
-                                val chooser = Intent.createChooser(whatsappIntent, "Send in WhatsApp")
-                                context.startActivity(chooser)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Send, contentDescription = "WhatsApp", tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Send via WhatsApp", color = Color.White)
-                    }
-
-                    Button(
-                        onClick = {
-                            val textToShare = selectedSaleReceipt ?: ""
-                            val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-                                data = android.net.Uri.parse("mailto:")
-                                putExtra(Intent.EXTRA_SUBJECT, "Purbesh Stationary - Sales Receipt #${1000 + (selectedSaleId ?: 0)}")
-                                putExtra(Intent.EXTRA_TEXT, textToShare)
-                            }
-                            try {
-                                context.startActivity(Intent.createChooser(emailIntent, "Send Email..."))
-                            } catch (e: Exception) {
-                                val fallbackIntent = Intent(Intent.ACTION_SEND).apply {
+                        Button(
+                            onClick = {
+                                val textToShare = selectedSaleReceipt ?: ""
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, textToShare)
-                                    putExtra(Intent.EXTRA_SUBJECT, "Purbesh Stationary - Sales Receipt #${1000 + (selectedSaleId ?: 0)}")
                                 }
-                                context.startActivity(Intent.createChooser(fallbackIntent, "Share Receipt Via"))
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Email, contentDescription = "Email", tint = MaterialTheme.colorScheme.onPrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Send via Email")
-                    }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Receipt Via"))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Share Receipt / Send")
+                        }
 
-                    Button(
-                        onClick = {
-                            val textToShare = selectedSaleReceipt ?: ""
-                            com.example.util.ReceiptExporter.printReceipt(context, textToShare, "Receipt_${1000 + (selectedSaleId ?: 0)}")
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Print, contentDescription = "Print")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Print Bill / Save as PDF")
-                    }
+                        Button(
+                            onClick = {
+                                val textToShare = selectedSaleReceipt ?: ""
+                                val whatsappIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, textToShare)
+                                    setPackage("com.whatsapp")
+                                }
+                                try {
+                                    context.startActivity(whatsappIntent)
+                                } catch (e: Exception) {
+                                    val chooser = Intent.createChooser(whatsappIntent, "Send in WhatsApp")
+                                    context.startActivity(chooser)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = "WhatsApp", tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Send via WhatsApp", color = Color.White)
+                        }
 
-                    Button(
-                        onClick = {
-                            val textToShare = selectedSaleReceipt ?: ""
-                            val saleInvoiceId = "${1000 + (selectedSaleId ?: 0)}"
-                            com.example.util.ReceiptExporter.saveReceiptToDownloads(context, textToShare, saleInvoiceId)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiary,
-                            contentColor = MaterialTheme.colorScheme.onTertiary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = "Download")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download Bill (.txt)")
-                    }
+                        Button(
+                            onClick = {
+                                val textToShare = selectedSaleReceipt ?: ""
+                                val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                    data = android.net.Uri.parse("mailto:")
+                                    putExtra(Intent.EXTRA_SUBJECT, "$shopName - Sales Receipt #${1000 + (selectedSaleId ?: 0)}")
+                                    putExtra(Intent.EXTRA_TEXT, textToShare)
+                                }
+                                try {
+                                    context.startActivity(Intent.createChooser(emailIntent, "Send Email..."))
+                                } catch (e: Exception) {
+                                    val fallbackIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, textToShare)
+                                        putExtra(Intent.EXTRA_SUBJECT, "$shopName - Sales Receipt #${1000 + (selectedSaleId ?: 0)}")
+                                    }
+                                    context.startActivity(Intent.createChooser(fallbackIntent, "Share Receipt Via"))
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Email, contentDescription = "Email", tint = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Send via Email")
+                        }
 
-                    TextButton(
-                        onClick = {
-                            selectedSaleReceipt = null
-                            selectedSaleId = null
-                        },
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("Dismiss")
+                        Button(
+                            onClick = {
+                                val textToShare = selectedSaleReceipt ?: ""
+                                com.example.util.ReceiptExporter.printReceipt(context, textToShare, "Receipt_${1000 + (selectedSaleId ?: 0)}")
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Print, contentDescription = "Print")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Print Bill / Save as PDF")
+                        }
+
+                        Button(
+                            onClick = {
+                                val textToShare = selectedSaleReceipt ?: ""
+                                val saleInvoiceId = "${1000 + (selectedSaleId ?: 0)}"
+                                com.example.util.ReceiptExporter.saveReceiptToDownloads(context, textToShare, saleInvoiceId)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiary,
+                                contentColor = MaterialTheme.colorScheme.onTertiary
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Download")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Download Bill (.txt)")
+                        }
+
+                        TextButton(
+                            onClick = {
+                                selectedSaleReceipt = null
+                                selectedSaleId = null
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Dismiss")
+                        }
                     }
                 }
-            }
-        )
-    }
+            )
+        }
     }
 }
 
-private fun buildFormattedReceiptForPastSale(sale: Sale, items: List<SaleItem>): String {
+private fun buildFormattedReceiptForPastSale(sale: Sale, items: List<SaleItem>, shopName: String): String {
     val sdf = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
     val dateStr = sdf.format(Date(sale.timestamp))
     val sb = StringBuilder()
     sb.append("===============================\n")
-    sb.append("       PURBESH STATIONARY      \n")
+    sb.append("       ${shopName.uppercase()}      \n")
     sb.append("    Your Premium Writing Hub    \n")
     sb.append("===============================\n")
     sb.append("Date: $dateStr\n")
@@ -546,5 +916,51 @@ private fun buildFormattedReceiptForPastSale(sale: Sale, items: List<SaleItem>):
     sb.append("===============================\n")
     sb.append("     Thank you for your visit! \n")
     sb.append("===============================\n")
+    return sb.toString()
+}
+
+private fun generateSalesCsv(sales: List<Sale>): String {
+    val sb = StringBuilder()
+    sb.append("Invoice ID,Date,Payment Mode,Total Amount (NPR),Net Profit (NPR)\n")
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    for (sale in sales) {
+        val dateStr = sdf.format(Date(sale.timestamp))
+        sb.append("${1000 + sale.id},$dateStr,${sale.paymentMode},${sale.totalAmount},${sale.totalProfit}\n")
+    }
+    return sb.toString()
+}
+
+private fun generateSalesSummaryReport(
+    sales: List<Sale>,
+    totalRevenue: Double,
+    totalProfit: Double,
+    totalCost: Double,
+    transactionCount: Int,
+    shopName: String
+): String {
+    val sdf = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
+    val dateStr = sdf.format(Date())
+    val sb = StringBuilder()
+    sb.append("========================================\n")
+    sb.append("        ${shopName.uppercase()} REPORT  \n")
+    sb.append("           OVERALL SALES PERFORMANCE    \n")
+    sb.append("========================================\n")
+    sb.append("Generated on: $dateStr\n")
+    sb.append("----------------------------------------\n")
+    sb.append(String.format("%-25s : NPR %10.2f\n", "TOTAL SALES REVENUE", totalRevenue))
+    sb.append(String.format("%-25s : NPR %10.2f\n", "TOTAL COST OF GOODS", totalCost))
+    sb.append(String.format("%-25s : NPR %10.2f\n", "TOTAL NET PROFIT", totalProfit))
+    sb.append(String.format("%-25s : %12d\n", "TRANSACTIONS COUNT", transactionCount))
+    sb.append("----------------------------------------\n\n")
+    sb.append("RECENT TRANSACTION SUMMARY:\n")
+    sb.append("----------------------------------------\n")
+    sb.append(String.format("%-8s %-12s %10s\n", "ID", "Mode", "Total (NPR)"))
+    sb.append("----------------------------------------\n")
+    for (sale in sales.take(15)) {
+        sb.append(String.format("#%-7d %-12s %10.2f\n", 1000 + sale.id, sale.paymentMode, sale.totalAmount))
+    }
+    sb.append("----------------------------------------\n")
+    sb.append("      Thank you for choosing POS!       \n")
+    sb.append("========================================\n")
     return sb.toString()
 }

@@ -57,6 +57,7 @@ fun DashboardScreen(
     val cart by viewModel.cart.collectAsState()
     val lowStockList by viewModel.lowStockProducts.collectAsState()
     val checkoutReceipt by viewModel.checkoutReceipt.collectAsState()
+    val shopName by viewModel.shopName.collectAsState()
 
     var showCameraScanner by remember { mutableStateOf(false) }
     var manualBarcode by remember { mutableStateOf("") }
@@ -67,6 +68,20 @@ fun DashboardScreen(
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var selectedPaymentMode by remember { mutableStateOf("Cash") }
     var customerPhone by remember { mutableStateOf("") }
+
+    // Discount states
+    var discountInput by remember { mutableStateOf("") }
+    var discountTypeIsPercentage by remember { mutableStateOf(false) } // false = NPR, true = %
+
+    val cartTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
+    val discountAmount = remember(discountInput, discountTypeIsPercentage, cartTotal) {
+        val inputVal = discountInput.toDoubleOrNull() ?: 0.0
+        if (discountTypeIsPercentage) {
+            (cartTotal * (inputVal / 100.0)).coerceIn(0.0, cartTotal)
+        } else {
+            inputVal.coerceIn(0.0, cartTotal)
+        }
+    }
 
     // QR Payment state
     var showQrPaymentDialog by remember { mutableStateOf(false) }
@@ -110,7 +125,7 @@ fun DashboardScreen(
                         }
                         Column {
                             Text(
-                                "Purbesh Stationary",
+                                shopName,
                                 fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -443,10 +458,12 @@ fun DashboardScreen(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     CameraScannerView(
                                         onBarcodeDetected = { code ->
-                                            showCameraScanner = false
                                             viewModel.scanBarcode(code) { success, msg ->
                                                 scanSuccess = success
                                                 scanMessage = msg
+                                                if (success) {
+                                                    showCameraScanner = false
+                                                }
                                             }
                                         }
                                     )
@@ -624,6 +641,15 @@ fun DashboardScreen(
                                     Text("Subtotal", style = MaterialTheme.typography.bodyMedium)
                                     Text("NPR ${String.format("%.2f", finalPrice)}", fontWeight = FontWeight.Bold)
                                 }
+                                if (discountAmount > 0.0) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Discount Applied", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                        Text("- NPR ${String.format("%.2f", discountAmount)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
@@ -639,7 +665,7 @@ fun DashboardScreen(
                                 ) {
                                     Text("Total Pay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     Text(
-                                        "NPR ${String.format("%.2f", finalPrice)}",
+                                        "NPR ${String.format("%.2f", (finalPrice - discountAmount).coerceAtLeast(0.0))}",
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Black,
                                         color = MaterialTheme.colorScheme.primary
@@ -741,6 +767,91 @@ fun DashboardScreen(
                             )
                         }
                     }
+
+                    Text("Apply Discount (Optional)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = discountInput,
+                            onValueChange = { input ->
+                                if (input.isEmpty() || input.all { it.isDigit() || it == '.' }) {
+                                    discountInput = input
+                                }
+                            },
+                            label = { Text(if (discountTypeIsPercentage) "Discount (%)" else "Discount (NPR)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            TextButton(
+                                onClick = { discountTypeIsPercentage = false },
+                                colors = ButtonDefaults.textButtonColors(
+                                    containerColor = if (!discountTypeIsPercentage) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    contentColor = if (!discountTypeIsPercentage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Text("NPR", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(
+                                onClick = { discountTypeIsPercentage = true },
+                                colors = ButtonDefaults.textButtonColors(
+                                    containerColor = if (discountTypeIsPercentage) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    contentColor = if (discountTypeIsPercentage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Text("%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    
+                    if (discountAmount > 0.0) {
+                        val originalTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
+                        val finalDiscounted = (originalTotal - discountAmount).coerceAtLeast(0.0)
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Original Subtotal:", style = MaterialTheme.typography.bodySmall)
+                                    Text("NPR ${String.format("%.2f", originalTotal)}", style = MaterialTheme.typography.bodySmall, textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Discount Applied:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text("- NPR ${String.format("%.2f", discountAmount)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("New Total:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    Text("NPR ${String.format("%.2f", finalDiscounted)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -752,8 +863,9 @@ fun DashboardScreen(
                             simulatedTxId = ""
                             showQrPaymentDialog = true
                         } else {
-                            viewModel.performCheckout(selectedPaymentMode, customerPhone)
+                            viewModel.performCheckout(selectedPaymentMode, customerPhone, discountAmount)
                             customerPhone = ""
+                            discountInput = ""
                         }
                     }
                 ) {
@@ -866,8 +978,24 @@ fun DashboardScreen(
                         }
                     }
 
+                    val actualTotal = (cartTotal - discountAmount).coerceAtLeast(0.0)
+                    if (discountAmount > 0.0) {
+                        Text(
+                            text = "Original subtotal: NPR ${String.format("%.2f", cartTotal)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                            color = Color.Gray
+                        )
+                        Text(
+                            text = "Discount applied: - NPR ${String.format("%.2f", discountAmount)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     Text(
-                        text = "Total Amount: NPR ${String.format("%.2f", cartTotal)}",
+                        text = "Total Amount: NPR ${String.format("%.2f", actualTotal)}",
                         fontWeight = FontWeight.Black,
                         fontSize = 18.sp,
                         color = qrColor
@@ -915,8 +1043,9 @@ fun DashboardScreen(
                 Button(
                     onClick = {
                         showQrPaymentDialog = false
-                        viewModel.performCheckout(selectedPaymentMode, customerPhone)
+                        viewModel.performCheckout(selectedPaymentMode, customerPhone, discountAmount)
                         customerPhone = ""
+                        discountInput = ""
                     },
                     enabled = simulatedQrPaid
                 ) {

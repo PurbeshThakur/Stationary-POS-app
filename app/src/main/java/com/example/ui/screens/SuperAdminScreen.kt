@@ -45,7 +45,7 @@ fun SuperAdminScreen(
     val auditLogs by viewModel.auditLogs.collectAsState()
 
     var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Profiles & Access", "System Audit Trails")
+    val tabTitles = listOf("Profiles & Access", "System Audit Trails", "Shop Configuration", "Store Credit Accounts")
 
     var showAddDialog by remember { mutableStateOf(false) }
     var userToEdit by remember { mutableStateOf<User?>(null) }
@@ -99,7 +99,7 @@ fun SuperAdminScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("New Profile", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-                    } else {
+                    } else if (selectedTab == 1) {
                         IconButton(onClick = { showClearLogsConfirm = true }) {
                             Icon(
                                 imageVector = Icons.Default.DeleteSweep,
@@ -136,7 +136,12 @@ fun SuperAdminScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (index == 0) Icons.Default.Group else Icons.Default.ReceiptLong,
+                                    imageVector = when (index) {
+                                        0 -> Icons.Default.Group
+                                        1 -> Icons.Default.ReceiptLong
+                                        2 -> Icons.Default.Storefront
+                                        else -> Icons.Default.AccountBalance
+                                    },
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -165,6 +170,12 @@ fun SuperAdminScreen(
                     )
                     1 -> AuditLogsTabContent(
                         logs = auditLogs
+                    )
+                    2 -> ShopConfigTabContent(
+                        viewModel = viewModel
+                    )
+                    3 -> CustomersTabContent(
+                        viewModel = viewModel
                     )
                 }
             }
@@ -1012,6 +1023,499 @@ fun PermissionToggleRow(
             onCheckedChange = onCheckedChange,
             enabled = enabled,
             modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+@Composable
+fun ShopConfigTabContent(
+    viewModel: InventoryViewModel
+) {
+    val shopName by viewModel.shopName.collectAsState()
+    val receiptHeader by viewModel.receiptHeaderNote.collectAsState()
+    val receiptFooter by viewModel.receiptFooterNote.collectAsState()
+    val showBarcode by viewModel.receiptShowBarcode.collectAsState()
+    val showDiscount by viewModel.receiptShowDiscountBreakdown.collectAsState()
+
+    var currentNameInput by remember(shopName) { mutableStateOf(shopName) }
+    var currentHeaderInput by remember(receiptHeader) { mutableStateOf(receiptHeader) }
+    var currentFooterInput by remember(receiptFooter) { mutableStateOf(receiptFooter) }
+    var currentShowBarcode by remember(showBarcode) { mutableStateOf(showBarcode) }
+    var currentShowDiscount by remember(showDiscount) { mutableStateOf(showDiscount) }
+
+    var saveSuccess by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Storefront,
+                                contentDescription = "Store Settings",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Business Identity",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Customize your shop brand and invoice name",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    Text(
+                        text = "The business name is displayed on the login terminal, the sales dashboard header, generated cloud backups, and exported transaction audit reports.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = currentNameInput,
+                        onValueChange = {
+                            currentNameInput = it
+                            saveSuccess = false
+                        },
+                        label = { Text("Business/Shop Name") },
+                        placeholder = { Text("e.g. Purbesh Stationery") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Edit, contentDescription = null)
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                        )
+                    )
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                    Text(
+                        text = "Receipt Formatting & Printing Settings",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    OutlinedTextField(
+                        value = currentHeaderInput,
+                        onValueChange = {
+                            currentHeaderInput = it
+                            saveSuccess = false
+                        },
+                        label = { Text("Receipt Sub-Header / Slogan") },
+                        placeholder = { Text("e.g. Your Premium Writing Hub") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = currentFooterInput,
+                        onValueChange = {
+                            currentFooterInput = it
+                            saveSuccess = false
+                        },
+                        label = { Text("Receipt Thank-You Footer Note") },
+                        placeholder = { Text("e.g. Thank you for your visit!") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Show Product Barcode Reference",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Appends the scan code reference of sold items to invoice bottom.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                        Switch(
+                            checked = currentShowBarcode,
+                            onCheckedChange = {
+                                currentShowBarcode = it
+                                saveSuccess = false
+                            }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Detailed Discount Breakdown",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Show original subtotal and discount deduction details.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                        Switch(
+                            checked = currentShowDiscount,
+                            onCheckedChange = {
+                                currentShowDiscount = it
+                                saveSuccess = false
+                            }
+                        )
+                    }
+
+                    if (saveSuccess) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Success",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Store preferences and receipt layout updated!",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    val isConfigChanged = currentNameInput.trim() != shopName ||
+                            currentHeaderInput.trim() != receiptHeader ||
+                            currentFooterInput.trim() != receiptFooter ||
+                            currentShowBarcode != showBarcode ||
+                            currentShowDiscount != showDiscount
+
+                    Button(
+                        onClick = {
+                            var changed = false
+                            if (currentNameInput.isNotBlank() && currentNameInput.trim() != shopName) {
+                                viewModel.updateShopName(currentNameInput.trim())
+                                changed = true
+                            }
+                            if (currentHeaderInput.trim() != receiptHeader ||
+                                currentFooterInput.trim() != receiptFooter ||
+                                currentShowBarcode != showBarcode ||
+                                currentShowDiscount != showDiscount) {
+                                viewModel.updateReceiptSettings(
+                                    currentHeaderInput.trim(),
+                                    currentFooterInput.trim(),
+                                    currentShowBarcode,
+                                    currentShowDiscount
+                                )
+                                changed = true
+                            }
+                            if (changed) {
+                                saveSuccess = true
+                            }
+                        },
+                        enabled = currentNameInput.isNotBlank() && isConfigChanged,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = "Save Settings"
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Changes")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CustomersTabContent(
+    viewModel: InventoryViewModel
+) {
+    val customers by viewModel.customersListState.collectAsState()
+    var showAddCustomerDialog by remember { mutableStateOf(false) }
+    var showAdjustDialog by remember { mutableStateOf<com.example.ui.Customer?>(null) }
+    var adjustAmount by remember { mutableStateOf("") }
+    var adjustType by remember { mutableStateOf("Payment") }
+
+    val totalDebtOutstanding = remember(customers) { customers.sumOf { it.storeCredit } }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.AccountBalance, contentDescription = null, tint = Color.White)
+                    }
+                    Column {
+                        Text("Total Outstanding Store Credit", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("NPR ${String.format("%.2f", totalDebtOutstanding)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Active credit lines to regular retail consumers.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        }
+
+        item {
+            Button(
+                onClick = { showAddCustomerDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Open New Store Credit Account")
+            }
+        }
+
+        item {
+            Text("Customer Accounts & Balances", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        }
+
+        if (customers.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                    Text("No customer profiles registered. Add regular customers to manage debt billing.", color = Color.Gray, fontSize = 13.sp)
+                }
+            }
+        } else {
+            items(customers) { customer ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Phone: ${customer.phone}", fontSize = 12.sp, color = Color.Gray)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("OUTSTANDING", fontSize = 9.sp, color = Color.Gray)
+                                val balanceColor = if (customer.storeCredit > 0.0) MaterialTheme.colorScheme.error else Color.Gray
+                                Text("NPR ${String.format("%.2f", customer.storeCredit)}", fontWeight = FontWeight.Bold, color = balanceColor)
+                            }
+
+                            Row {
+                                IconButton(onClick = { 
+                                    showAdjustDialog = customer
+                                    adjustAmount = ""
+                                    adjustType = "Payment"
+                                }) {
+                                    Icon(Icons.Default.EditAttributes, contentDescription = "Adjust", tint = MaterialTheme.colorScheme.primary)
+                                }
+                                IconButton(onClick = { viewModel.deleteCustomer(customer.id) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.LightGray)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddCustomerDialog) {
+        var custName by remember { mutableStateOf("") }
+        var custPhone by remember { mutableStateOf("") }
+        var initialBal by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddCustomerDialog = false },
+            title = { Text("Create Customer Profile", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = custName,
+                        onValueChange = { custName = it },
+                        label = { Text("Full Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = custPhone,
+                        onValueChange = { custPhone = it },
+                        label = { Text("Phone Number") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = initialBal,
+                        onValueChange = { initialBal = it },
+                        label = { Text("Initial Debt/Credit Balance (NPR)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (custName.isNotBlank() && custPhone.isNotBlank()) {
+                            val bal = initialBal.toDoubleOrNull() ?: 0.0
+                            viewModel.addOrUpdateCustomer(
+                                com.example.ui.Customer(
+                                    id = UUID.randomUUID().toString(),
+                                    name = custName.trim(),
+                                    phone = custPhone.trim(),
+                                    storeCredit = bal
+                                )
+                            )
+                            showAddCustomerDialog = false
+                        }
+                    },
+                    enabled = custName.isNotBlank() && custPhone.isNotBlank()
+                ) {
+                    Text("Register Account")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddCustomerDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAdjustDialog != null) {
+        val target = showAdjustDialog!!
+        AlertDialog(
+            onDismissRequest = { showAdjustDialog = null },
+            title = { Text("Adjust Ledger: ${target.name}", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Current Outstanding Debt: NPR ${String.format("%.2f", target.storeCredit)}", fontSize = 13.sp)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ElevatedFilterChip(
+                            selected = adjustType == "Payment",
+                            onClick = { adjustType = "Payment" },
+                            label = { Text("Record Payment (-)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        ElevatedFilterChip(
+                            selected = adjustType == "Add Debt",
+                            onClick = { adjustType = "Add Debt" },
+                            label = { Text("Add Debt (+)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = adjustAmount,
+                        onValueChange = { adjustAmount = it },
+                        label = { Text("Amount (NPR)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val amt = adjustAmount.toDoubleOrNull() ?: 0.0
+                        if (amt > 0.0) {
+                            val adjustment = if (adjustType == "Payment") -amt else amt
+                            viewModel.adjustStoreCredit(target.id, adjustment)
+                            showAdjustDialog = null
+                        }
+                    },
+                    enabled = adjustAmount.isNotBlank()
+                ) {
+                    Text("Confirm Adjustment")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdjustDialog = null }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }

@@ -58,6 +58,7 @@ fun CloudSyncScreen(
     val cloudVaultId by viewModel.cloudVaultId.collectAsState()
     val autoBackupEnabled by viewModel.autoBackupEnabled.collectAsState()
     val cloudBackupState by viewModel.cloudBackupState.collectAsState()
+    val shopName by viewModel.shopName.collectAsState()
 
     val googleAccountEmail by viewModel.googleAccountEmail.collectAsState()
     val googleAccountName by viewModel.googleAccountName.collectAsState()
@@ -759,15 +760,16 @@ fun CloudSyncScreen(
         val totalProfit = sales.sumOf { it.totalProfit }
         val dateStr = remember { SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault()).format(Date()) }
 
-        val compiledReport = remember(sales) {
+        val compiledReport = remember(sales, shopName) {
             val sb = StringBuilder()
+            val paddedShop = shopName.uppercase().padEnd(30).take(30)
             sb.append("========================================\n")
-            sb.append("       PURBESH STATIONARY REPORTS       \n")
+            sb.append("       ${paddedShop}       \n")
             sb.append("         Cloud Transaction Audit        \n")
             sb.append("========================================\n")
             sb.append("Vault ID: $cloudVaultId\n")
             sb.append("Export Time: $dateStr\n")
-            sb.append("Store Outlet: Purbesh Stationery\n")
+            sb.append("Store Outlet: $shopName\n")
             sb.append("----------------------------------------\n")
             sb.append("Total Sales Transactions: ${sales.size}\n")
             sb.append("Total Revenue: NPR ${String.format("%.2f", totalRevenue)}\n")

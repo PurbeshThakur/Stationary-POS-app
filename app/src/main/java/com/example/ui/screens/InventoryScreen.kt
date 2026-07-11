@@ -18,9 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,6 +30,7 @@ import com.example.data.Product
 import com.example.ui.InventoryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
+@android.annotation.SuppressLint("MissingPermission")
 @Composable
 fun InventoryScreen(
     viewModel: InventoryViewModel
@@ -46,6 +49,7 @@ fun InventoryScreen(
     var promoPhone by remember { mutableStateOf("") }
     var promoDiscount by remember { mutableStateOf("20% Off") }
     var promoProduct by remember { mutableStateOf("") }
+    var showLabelGeneratorForProduct by remember { mutableStateOf<Product?>(null) }
 
     // Dropdown options, dynamically constructed from defaults and actual product categories in the DB
     val categories = remember(products) {
@@ -251,6 +255,74 @@ fun InventoryScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            if (lowStockList.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.errorContainer, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.NotificationsActive, contentDescription = "Alert", tint = MaterialTheme.colorScheme.error)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Low Stock Push Alerts",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = "${lowStockList.size} items are below safe thresholds. Click to trigger notification alert.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        val context = LocalContext.current
+                        Button(
+                            onClick = {
+                                val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                                val channelId = "low_stock_alerts_channel"
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    val channel = android.app.NotificationChannel(
+                                        channelId, 
+                                        "Low Stock Alerts", 
+                                        android.app.NotificationManager.IMPORTANCE_HIGH
+                                    )
+                                    notificationManager.createNotificationChannel(channel)
+                                }
+                                val messageText = lowStockList.take(3).joinToString { it.name } + if (lowStockList.size > 3) " and others" else ""
+                                val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                                    .setContentTitle("⚠️ Purbesh Stationery Low Stock")
+                                    .setContentText("$messageText are running critically low!")
+                                    .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                                    .setAutoCancel(true)
+                                
+                                notificationManager.notify(101, builder.build())
+                                android.widget.Toast.makeText(context, "System push notification triggered!", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Alert", color = Color.White)
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             // Category filter chips
@@ -331,7 +403,8 @@ fun InventoryScreen(
                             product = product,
                             isAdmin = currentRole == com.example.ui.UserRole.ADMIN,
                             onEdit = { showEditDialog = product },
-                            onDelete = { showDeleteConfirm = product }
+                            onDelete = { showDeleteConfirm = product },
+                            onGenerateLabel = { showLabelGeneratorForProduct = product }
                         )
                     }
                 }
@@ -498,6 +571,281 @@ fun InventoryScreen(
             }
         )
     }
+
+    // --- Barcode & QR Label Generator Dialog ---
+    if (showLabelGeneratorForProduct != null) {
+        LabelGeneratorDialog(
+            product = showLabelGeneratorForProduct!!,
+            onDismiss = { showLabelGeneratorForProduct = null }
+        )
+    }
+}
+
+@Composable
+fun LabelGeneratorDialog(
+    product: Product,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var labelType by remember { mutableStateOf("QR Code") }
+
+    val qrMatrix = remember(product.barcode) {
+        try {
+            com.google.zxing.qrcode.QRCodeWriter().encode(
+                product.barcode.ifBlank { "0000" },
+                com.google.zxing.BarcodeFormat.QR_CODE,
+                40,
+                40
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    val barcodeMatrix = remember(product.barcode) {
+        try {
+            com.google.zxing.MultiFormatWriter().encode(
+                product.barcode.ifBlank { "0000" },
+                com.google.zxing.BarcodeFormat.CODE_128,
+                120,
+                1
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.QrCode, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("In-App Label Generator", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Generate retail labels for ${product.name} to paste on shelving or packaging.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ElevatedFilterChip(
+                        selected = labelType == "QR Code",
+                        onClick = { labelType = "QR Code" },
+                        label = { Text("QR Code Label") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    ElevatedFilterChip(
+                        selected = labelType == "Barcode",
+                        onClick = { labelType = "Barcode" },
+                        label = { Text("1D Barcode") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Card(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .height(180.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "PURBESH STATIONERY",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.DarkGray
+                        )
+                        Text(
+                            text = product.name,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        if (labelType == "QR Code") {
+                            androidx.compose.foundation.Canvas(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .border(1.dp, Color.Black)
+                                    .padding(4.dp)
+                             ) {
+                                if (qrMatrix != null) {
+                                    val matrixWidth = qrMatrix.width
+                                    val matrixHeight = qrMatrix.height
+                                    val cellWidth = size.width / matrixWidth
+                                    val cellHeight = size.height / matrixHeight
+                                    for (y in 0 until matrixHeight) {
+                                        for (x in 0 until matrixWidth) {
+                                            if (qrMatrix.get(x, y)) {
+                                                drawRect(
+                                                    color = Color.Black,
+                                                    topLeft = androidx.compose.ui.geometry.Offset(x * cellWidth, y * cellHeight),
+                                                    size = androidx.compose.ui.geometry.Size(cellWidth, cellHeight)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            androidx.compose.foundation.Canvas(
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .height(55.dp)
+                                    .border(0.5.dp, Color.LightGray)
+                                    .padding(vertical = 4.dp, horizontal = 8.dp)
+                            ) {
+                                if (barcodeMatrix != null) {
+                                    val matrixWidth = barcodeMatrix.width
+                                    val cellWidth = size.width / matrixWidth
+                                    for (x in 0 until matrixWidth) {
+                                        if (barcodeMatrix.get(x, 0)) {
+                                            drawRect(
+                                                color = Color.Black,
+                                                topLeft = androidx.compose.ui.geometry.Offset(x * cellWidth, 0f),
+                                                size = androidx.compose.ui.geometry.Size(cellWidth, size.height)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "*${product.barcode}*",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.Black
+                        )
+                        Text(
+                            text = "NPR ${String.format("%.2f", product.sellingPrice)}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.Red
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val labelCodeHtml = if (labelType == "QR Code") {
+                        com.example.util.ReceiptExporter.generateQrSvg(product.barcode)
+                    } else {
+                        com.example.util.ReceiptExporter.generateBarcodeSvg(product.barcode)
+                    }
+
+                    val htmlLabel = """
+                        <html>
+                        <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body {
+                                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                                text-align: center;
+                                padding: 12px;
+                                margin: 0;
+                                background-color: #ffffff;
+                                color: #000000;
+                            }
+                            .label-container {
+                                border: 2px solid #000000;
+                                padding: 14px;
+                                display: inline-block;
+                                width: 260px;
+                                border-radius: 8px;
+                                background-color: #ffffff;
+                            }
+                            .title { 
+                                font-weight: bold; 
+                                font-size: 11px; 
+                                letter-spacing: 1px;
+                                margin-bottom: 4px; 
+                                color: #555555;
+                            }
+                            .prod-name { 
+                                font-size: 16px; 
+                                font-weight: 900; 
+                                margin-bottom: 8px; 
+                                color: #000000;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            }
+                            .code-wrapper {
+                                margin: 10px auto;
+                                display: block;
+                                text-align: center;
+                            }
+                            .code-wrapper svg {
+                                display: inline-block;
+                                max-width: 100%;
+                                height: auto;
+                            }
+                            .barcode-num { 
+                                font-family: monospace;
+                                font-size: 11px; 
+                                letter-spacing: 2px; 
+                                margin-top: 4px; 
+                                color: #333333;
+                            }
+                            .price { 
+                                font-size: 18px; 
+                                font-weight: bold; 
+                                color: #e53935; 
+                                margin-top: 8px; 
+                            }
+                        </style>
+                        </head>
+                        <body>
+                            <div class="label-container">
+                                <div class="title">PURBESH STATIONERY</div>
+                                <div class="prod-name">${product.name}</div>
+                                <div class="code-wrapper">
+                                    $labelCodeHtml
+                                </div>
+                                <div class="barcode-num">${product.barcode}</div>
+                                <div class="price">NPR ${String.format("%.2f", product.sellingPrice)}</div>
+                            </div>
+                        </body>
+                        </html>
+                    """.trimIndent()
+                    com.example.util.ReceiptExporter.printHtml(context, htmlLabel, "Label_${product.barcode}")
+                }
+            ) {
+                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Print / Export Label")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 @Composable
@@ -505,7 +853,8 @@ fun ProductItemCard(
     product: Product,
     isAdmin: Boolean,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onGenerateLabel: () -> Unit
 ) {
     val isLowStock = product.stockQuantity <= product.minStockThreshold
 
@@ -599,10 +948,14 @@ fun ProductItemCard(
                 }
             }
 
-            if (isAdmin) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                IconButton(onClick = onGenerateLabel) {
+                    Icon(Icons.Default.QrCode, contentDescription = "Generate Label", tint = MaterialTheme.colorScheme.secondary)
+                }
+                if (isAdmin) {
                     IconButton(onClick = onEdit) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
                     }

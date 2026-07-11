@@ -55,6 +55,24 @@ data class SmsAlert(
     val timestamp: Long
 )
 
+@com.squareup.moshi.JsonClass(generateAdapter = true)
+data class Expense(
+    val id: String,
+    val title: String,
+    val category: String,
+    val amount: Double,
+    val timestamp: Long,
+    val description: String = ""
+)
+
+@com.squareup.moshi.JsonClass(generateAdapter = true)
+data class Customer(
+    val id: String,
+    val name: String,
+    val phone: String,
+    val storeCredit: Double = 0.0
+)
+
 sealed interface CloudBackupState {
     object Idle : CloudBackupState
     object Syncing : CloudBackupState
@@ -83,6 +101,14 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         com.squareup.moshi.Types.newParameterizedType(List::class.java, AuditLog::class.java)
     )
 
+    private val expenseListAdapter = moshi.adapter<List<Expense>>(
+        com.squareup.moshi.Types.newParameterizedType(List::class.java, Expense::class.java)
+    )
+
+    private val customerListAdapter = moshi.adapter<List<Customer>>(
+        com.squareup.moshi.Types.newParameterizedType(List::class.java, Customer::class.java)
+    )
+
     private val defaultUsers = listOf(
         User("admin", UserRole.ADMIN, "1234", "System Administrator", 0xFF6200EE, isSuperAdmin = true),
         User("purbesh", UserRole.ADMIN, "1111", "Purbesh (Admin)", 0xFF00C853, isSuperAdmin = true),
@@ -95,6 +121,25 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _auditLogs = MutableStateFlow<List<AuditLog>>(emptyList())
     val auditLogs: StateFlow<List<AuditLog>> = _auditLogs.asStateFlow()
+
+    private val _expensesListState = MutableStateFlow<List<Expense>>(emptyList())
+    val expensesListState: StateFlow<List<Expense>> = _expensesListState.asStateFlow()
+
+    private val _customersListState = MutableStateFlow<List<Customer>>(emptyList())
+    val customersListState: StateFlow<List<Customer>> = _customersListState.asStateFlow()
+
+    // Custom receipt settings
+    private val _receiptHeaderNote = MutableStateFlow(sharedPrefs.getString("receipt_header_note", "Your Premium Writing Hub") ?: "Your Premium Writing Hub")
+    val receiptHeaderNote: StateFlow<String> = _receiptHeaderNote.asStateFlow()
+
+    private val _receiptFooterNote = MutableStateFlow(sharedPrefs.getString("receipt_footer_note", "Thank you for shopping!") ?: "Thank you for shopping!")
+    val receiptFooterNote: StateFlow<String> = _receiptFooterNote.asStateFlow()
+
+    private val _receiptShowBarcode = MutableStateFlow(sharedPrefs.getBoolean("receipt_show_barcode", true))
+    val receiptShowBarcode: StateFlow<Boolean> = _receiptShowBarcode.asStateFlow()
+
+    private val _receiptShowDiscountBreakdown = MutableStateFlow(sharedPrefs.getBoolean("receipt_show_discount_breakdown", true))
+    val receiptShowDiscountBreakdown: StateFlow<Boolean> = _receiptShowDiscountBreakdown.asStateFlow()
 
     init {
         loadUsersAndLogs()
@@ -129,6 +174,46 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             } catch (e: Exception) {
                 Log.e("InventoryViewModel", "Error parsing audit logs JSON", e)
             }
+        }
+
+        val expensesJson = sharedPrefs.getString("expenses_list_json", null)
+        if (expensesJson != null) {
+            try {
+                val list = expenseListAdapter.fromJson(expensesJson)
+                if (list != null) {
+                    _expensesListState.value = list
+                }
+            } catch (e: Exception) {
+                Log.e("InventoryViewModel", "Error parsing expenses JSON", e)
+            }
+        } else {
+            // Default sample expenses
+            val samples = listOf(
+                Expense(id = UUID.randomUUID().toString(), title = "Office Tea & Coffee", category = "Food & Refreshments", amount = 120.0, timestamp = System.currentTimeMillis() - 86400000, description = "Weekly tea purchase for staff"),
+                Expense(id = UUID.randomUUID().toString(), title = "Electricity Bill June", category = "Utilities", amount = 2400.0, timestamp = System.currentTimeMillis() - 172800000, description = "NEA payment")
+            )
+            _expensesListState.value = samples
+            saveExpenses(samples)
+        }
+
+        val customersJson = sharedPrefs.getString("customers_list_json", null)
+        if (customersJson != null) {
+            try {
+                val list = customerListAdapter.fromJson(customersJson)
+                if (list != null) {
+                    _customersListState.value = list
+                }
+            } catch (e: Exception) {
+                Log.e("InventoryViewModel", "Error parsing customers JSON", e)
+            }
+        } else {
+            // Default sample customers
+            val samples = listOf(
+                Customer(id = UUID.randomUUID().toString(), name = "Kiran Sharma", phone = "9841234567", storeCredit = 1500.0),
+                Customer(id = UUID.randomUUID().toString(), name = "Ramesh Adhikari", phone = "9851122334", storeCredit = 0.0)
+            )
+            _customersListState.value = samples
+            saveCustomers(samples)
         }
     }
 
@@ -170,6 +255,15 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _autoBackupEnabled = MutableStateFlow<Boolean>(sharedPrefs.getBoolean("auto_backup_enabled", false))
     val autoBackupEnabled: StateFlow<Boolean> = _autoBackupEnabled.asStateFlow()
+
+    private val _shopName = MutableStateFlow<String>(sharedPrefs.getString("business_shop_name", "Purbesh Stationery") ?: "Purbesh Stationery")
+    val shopName: StateFlow<String> = _shopName.asStateFlow()
+
+    fun updateShopName(name: String) {
+        sharedPrefs.edit().putString("business_shop_name", name).apply()
+        _shopName.value = name
+        logAction("Changed Shop Name", "New Name: $name")
+    }
 
     fun setGoogleAccount(email: String?, displayName: String?) {
         sharedPrefs.edit()
@@ -257,6 +351,88 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         val trimmed = if (currentLogs.size > 500) currentLogs.take(500) else currentLogs
         _auditLogs.value = trimmed
         saveAuditLogs(trimmed)
+    }
+
+    fun saveExpenses(list: List<Expense>) {
+        try {
+            val json = expenseListAdapter.toJson(list)
+            sharedPrefs.edit().putString("expenses_list_json", json).apply()
+        } catch (e: Exception) {
+            Log.e("InventoryViewModel", "Error saving expenses", e)
+        }
+    }
+
+    fun saveCustomers(list: List<Customer>) {
+        try {
+            val json = customerListAdapter.toJson(list)
+            sharedPrefs.edit().putString("customers_list_json", json).apply()
+        } catch (e: Exception) {
+            Log.e("InventoryViewModel", "Error saving customers", e)
+        }
+    }
+
+    fun updateReceiptSettings(header: String, footer: String, showBarcode: Boolean, showDiscount: Boolean) {
+        sharedPrefs.edit()
+            .putString("receipt_header_note", header)
+            .putString("receipt_footer_note", footer)
+            .putBoolean("receipt_show_barcode", showBarcode)
+            .putBoolean("receipt_show_discount_breakdown", showDiscount)
+            .apply()
+        _receiptHeaderNote.value = header
+        _receiptFooterNote.value = footer
+        _receiptShowBarcode.value = showBarcode
+        _receiptShowDiscountBreakdown.value = showDiscount
+        logAction("Customized Receipt settings", "Updated header, footer, options")
+    }
+
+    fun addExpense(expense: Expense) {
+        val list = _expensesListState.value.toMutableList()
+        list.add(0, expense)
+        _expensesListState.value = list
+        saveExpenses(list)
+        logAction("Added Expense", "Amount: NPR ${expense.amount}, Category: ${expense.category}")
+    }
+
+    fun deleteExpense(id: String) {
+        val list = _expensesListState.value.toMutableList()
+        list.removeAll { it.id == id }
+        _expensesListState.value = list
+        saveExpenses(list)
+        logAction("Deleted Expense", "ID: $id")
+    }
+
+    fun addOrUpdateCustomer(customer: Customer) {
+        val list = _customersListState.value.toMutableList()
+        val index = list.indexOfFirst { it.id == customer.id || (it.phone == customer.phone && customer.phone.isNotBlank()) }
+        if (index != -1) {
+            list[index] = customer
+            logAction("Updated Customer", "Name: ${customer.name}, Balance: NPR ${customer.storeCredit}")
+        } else {
+            list.add(customer)
+            logAction("Added Customer Profile", "Name: ${customer.name}, Phone: ${customer.phone}")
+        }
+        _customersListState.value = list
+        saveCustomers(list)
+    }
+
+    fun deleteCustomer(id: String) {
+        val list = _customersListState.value.toMutableList()
+        list.removeAll { it.id == id }
+        _customersListState.value = list
+        saveCustomers(list)
+        logAction("Deleted Customer", "ID: $id")
+    }
+
+    fun adjustStoreCredit(customerId: String, amount: Double) {
+        val list = _customersListState.value.toMutableList()
+        val index = list.indexOfFirst { it.id == customerId }
+        if (index != -1) {
+            val updated = list[index].copy(storeCredit = (list[index].storeCredit + amount).coerceAtLeast(0.0))
+            list[index] = updated
+            _customersListState.value = list
+            saveCustomers(list)
+            logAction("Adjusted Customer Credit", "Customer: ${updated.name}, Change: $amount, New Balance: ${updated.storeCredit}")
+        }
     }
 
     fun addOrUpdateUser(user: User) {
@@ -392,8 +568,34 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
      * Scan a barcode and add it directly to cart if found
      */
     fun scanBarcode(barcode: String, onResult: (Boolean, String) -> Unit) {
+        val cleanedBarcode = barcode.trim().removeSurrounding("*").trim()
         viewModelScope.launch {
-            val product = repository.getProductByBarcode(barcode)
+            // 1. Try exact match with cleaned barcode
+            var product = repository.getProductByBarcode(cleanedBarcode)
+
+            // 2. If not found, try case-insensitive and trimmed fallback across all products
+            if (product == null) {
+                val allProds = allProducts.value
+                product = allProds.find { 
+                    it.barcode.trim().removeSurrounding("*").trim().lowercase() == cleanedBarcode.lowercase() 
+                }
+            }
+
+            // 3. If still not found, try matching as a substring (to handle scanner prefixes/suffixes or leading/trailing zeros)
+            if (product == null) {
+                val allProds = allProducts.value
+                product = allProds.find {
+                    val target = it.barcode.trim().removeSurrounding("*").trim().lowercase()
+                    val scanned = cleanedBarcode.lowercase()
+                    target.isNotEmpty() && (scanned.contains(target) || target.contains(scanned))
+                }
+            }
+
+            // 4. Try exact match on original raw barcode just in case
+            if (product == null) {
+                product = repository.getProductByBarcode(barcode)
+            }
+
             if (product != null) {
                 if (product.stockQuantity > 0) {
                     addToCart(product, 1)
@@ -410,7 +612,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * Complete POS checkout transaction
      */
-    fun performCheckout(paymentMode: String, customerPhone: String) {
+    fun performCheckout(paymentMode: String, customerPhone: String, discountAmount: Double = 0.0, customerId: String? = null) {
         val cartItems = _cart.value
         if (cartItems.isEmpty()) return
 
@@ -438,24 +640,42 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
 
+            val actualTotalAmount = (totalAmount - discountAmount).coerceAtLeast(0.0)
+            val actualTotalProfit = totalProfit - discountAmount
+
             val sale = Sale(
                 timestamp = timestamp,
-                totalAmount = totalAmount,
-                totalProfit = totalProfit,
+                totalAmount = actualTotalAmount,
+                totalProfit = actualTotalProfit,
                 paymentMode = paymentMode
             )
 
             val success = repository.executeSale(sale, saleItems)
             if (success) {
-                logAction("Completed Sale", "Total: NPR ${String.format("%.2f", totalAmount)}, Mode: $paymentMode")
+                // If checking out as store credit / debt, adjust the selected customer's credit / balance
+                if (customerId != null && (paymentMode.contains("Store Credit", ignoreCase = true) || paymentMode.contains("Debt", ignoreCase = true) || paymentMode.contains("Split", ignoreCase = true))) {
+                    var debtAmount = actualTotalAmount
+                    if (paymentMode.contains("Split", ignoreCase = true)) {
+                        // Extract Store Credit split amount if any
+                        // Format: Split: Cash (NPR 500) + Store Credit (NPR 1000)
+                        val regex = "Store Credit \\(NPR (\\d+(?:\\.\\d+)?)\\)".toRegex()
+                        val match = regex.find(paymentMode)
+                        if (match != null) {
+                            debtAmount = match.groupValues[1].toDoubleOrNull() ?: actualTotalAmount
+                        }
+                    }
+                    adjustStoreCredit(customerId, debtAmount)
+                }
+
+                logAction("Completed Sale", "Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", discountAmount)}), Mode: $paymentMode")
                 // Generate a formatted receipt for print/sharing
-                val receipt = buildFormattedReceipt(sale, saleItems, customerPhone)
+                val receipt = buildFormattedReceipt(sale, saleItems, customerPhone, discountAmount)
                 _checkoutReceipt.value = receipt
                 _cart.value = emptyMap() // clear cart on success
 
                 // Trigger automatic SMS receipt
                 if (customerPhone.isNotBlank()) {
-                    val smsText = "Thank you for shopping at Purbesh Stationary! Invoice #${1000 + sale.id} generated. Total: NPR ${String.format("%.2f", totalAmount)}. Mode: $paymentMode."
+                    val smsText = "Thank you for shopping at ${_shopName.value}! Invoice #${1000 + sale.id} generated. Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", discountAmount)}). Mode: $paymentMode."
                     sendSms(customerPhone, smsText, "Sale Receipt")
                 }
 
@@ -472,13 +692,14 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private fun buildFormattedReceipt(sale: Sale, items: List<SaleItem>, phone: String): String {
+    private fun buildFormattedReceipt(sale: Sale, items: List<SaleItem>, phone: String, discountAmount: Double): String {
         val sdf = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
         val dateStr = sdf.format(Date(sale.timestamp))
         val sb = StringBuilder()
+        val shopHeader = _shopName.value.uppercase().padEnd(23).take(23)
         sb.append("===============================\n")
-        sb.append("       PURBESH STATIONARY      \n")
-        sb.append("    Your Premium Writing Hub    \n")
+        sb.append("       $shopHeader      \n")
+        sb.append("    ${_receiptHeaderNote.value}    \n")
         sb.append("===============================\n")
         sb.append("Date: $dateStr\n")
         if (phone.isNotBlank()) {
@@ -487,15 +708,26 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         sb.append("-------------------------------\n")
         sb.append(String.format("%-18s %3s %8s\n", "Item Description", "Qty", "Price"))
         sb.append("-------------------------------\n")
+        var subTotal = 0.0
         for (item in items) {
             val nameTrunc = if (item.productName.length > 17) item.productName.substring(0, 15) + ".." else item.productName
-            sb.append(String.format("%-18s %3d %8.2f\n", nameTrunc, item.quantity, item.sellingPrice * item.quantity))
+            val lineTotal = item.sellingPrice * item.quantity
+            subTotal += lineTotal
+            sb.append(String.format("%-18s %3d %8.2f\n", nameTrunc, item.quantity, lineTotal))
         }
         sb.append("-------------------------------\n")
+        if (discountAmount > 0.0 && _receiptShowDiscountBreakdown.value) {
+            sb.append(String.format("%-22s %8.2f\n", "SUBTOTAL:", subTotal))
+            sb.append(String.format("%-22s %8.2f\n", "DISCOUNT:", discountAmount))
+        }
         sb.append(String.format("%-22s %8.2f\n", "TOTAL AMOUNT:", sale.totalAmount))
         sb.append("Payment Mode: ${sale.paymentMode}\n")
+        if (_receiptShowBarcode.value && items.isNotEmpty()) {
+            sb.append("-------------------------------\n")
+            sb.append("Barcode Ref: ${items.first().barcode}\n")
+        }
         sb.append("===============================\n")
-        sb.append("     Thank you for your visit! \n")
+        sb.append("     ${_receiptFooterNote.value} \n")
         sb.append("===============================\n")
         return sb.toString()
     }
@@ -595,7 +827,8 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 sales = sales,
                 saleItems = saleItems,
                 formattedReport = customReport ?: buildBackupReportString(sales, saleItems),
-                backupTimestamp = System.currentTimeMillis()
+                backupTimestamp = System.currentTimeMillis(),
+                storeName = _shopName.value
             )
 
             val currentId = _cloudVaultId.value
@@ -653,7 +886,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         val totalRevenue = sales.sumOf { it.totalAmount }
         val totalProfit = sales.sumOf { it.totalProfit }
         val sb = StringBuilder()
-        sb.append("=== PURBESH STATIONARY CLOUD REPORT ===\n")
+        sb.append("=== ${_shopName.value.uppercase()} CLOUD REPORT ===\n")
         sb.append("Auto Sync Backup Timestamp: ${SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault()).format(Date())}\n")
         sb.append("Total Distinct Items Sold: ${saleItems.sumOf { it.quantity }}\n")
         sb.append("Total Revenue: NPR ${String.format("%.2f", totalRevenue)}\n")
@@ -677,7 +910,8 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 sales = sales,
                 saleItems = saleItems,
                 formattedReport = customReport ?: buildBackupReportString(sales, saleItems),
-                backupTimestamp = System.currentTimeMillis()
+                backupTimestamp = System.currentTimeMillis(),
+                storeName = _shopName.value
             )
 
             var fileId = _googleDriveFileId.value
@@ -766,7 +1000,8 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                         sales = sales,
                         saleItems = saleItems,
                         formattedReport = buildBackupReportString(sales, saleItems),
-                        backupTimestamp = System.currentTimeMillis()
+                        backupTimestamp = System.currentTimeMillis(),
+                        storeName = _shopName.value
                     )
 
                     var fileId = _googleDriveFileId.value

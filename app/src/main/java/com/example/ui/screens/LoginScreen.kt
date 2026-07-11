@@ -42,6 +42,7 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit
 ) {
     val users by viewModel.usersListState.collectAsState()
+    val shopName by viewModel.shopName.collectAsState()
     var selectedUser by remember { mutableStateOf<User?>(null) }
     var pinText by remember { mutableStateOf("") }
     var pinVisible by remember { mutableStateOf(false) }
@@ -111,7 +112,7 @@ fun LoginScreen(
                 }
 
                 Text(
-                    text = "Purbesh Stationery",
+                    text = shopName,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface
