@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1033570612012",
+    "firebase_url": "https://shop-inventory-app-eb2b4-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "shop-inventory-app-eb2b4",
+    "storage_bucket": "shop-inventory-app-eb2b4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1033570612012:android:1930b56bfab7c06b07b289",
+        "android_client_info": {
+          "package_name": "com.inventory.shop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAEqkzOv1khtMy_tbUPLFTcll1SUCnntpE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

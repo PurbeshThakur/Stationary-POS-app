@@ -3,8 +3,8 @@ package com.example.data
 import kotlinx.coroutines.flow.Flow
 
 class StationeryRepository(
-    private val productDao: ProductDao,
-    private val saleDao: SaleDao
+    val productDao: ProductDao,
+    val saleDao: SaleDao
 ) {
     val allProducts: Flow<List<Product>> = productDao.getAllProducts()
     val allSales: Flow<List<Sale>> = saleDao.getAllSales()
@@ -85,6 +85,96 @@ class StationeryRepository(
         } catch (e: Exception) {
             e.printStackTrace()
             return false
+        }
+    }
+
+    suspend fun mergeAndSync(
+        localProducts: List<Product>,
+        localSales: List<Sale>,
+        localSaleItems: List<SaleItem>,
+        cloudProducts: List<Product>,
+        cloudSales: List<Sale>,
+        cloudSaleItems: List<SaleItem>
+    ) {
+        // 1. Find all cloud sales that are not present locally (by timestamp)
+        val localTimestamps = localSales.map { it.timestamp }.toSet()
+        val newCloudSales = cloudSales.filter { it.timestamp !in localTimestamps }
+
+        // 2. Find all local sales that are not present in the cloud (by timestamp)
+        val cloudTimestamps = cloudSales.map { it.timestamp }.toSet()
+        val localSalesNotInCloud = localSales.filter { it.timestamp !in cloudTimestamps }
+
+        // 3. Calculate total quantities of each product sold in local sales that are not yet in the cloud.
+        val localUnsyncedQuantities = mutableMapOf<String, Int>()
+        for (localSale in localSalesNotInCloud) {
+            val items = localSaleItems.filter { it.saleId == localSale.id }
+            for (item in items) {
+                if (item.barcode.isNotBlank()) {
+                    localUnsyncedQuantities[item.barcode] = (localUnsyncedQuantities[item.barcode] ?: 0) + item.quantity
+                }
+            }
+        }
+
+        // 4. Merge Products first so they exist when inserting sale items
+        for (cloudProduct in cloudProducts) {
+            val localProduct = localProducts.find { it.barcode == cloudProduct.barcode }
+            val unsyncedSold = localUnsyncedQuantities[cloudProduct.barcode] ?: 0
+            val reconciledStock = (cloudProduct.stockQuantity - unsyncedSold).coerceAtLeast(0)
+
+            if (localProduct == null) {
+                productDao.insertProduct(
+                    Product(
+                        name = cloudProduct.name,
+                        barcode = cloudProduct.barcode,
+                        category = cloudProduct.category,
+                        costPrice = cloudProduct.costPrice,
+                        sellingPrice = cloudProduct.sellingPrice,
+                        stockQuantity = reconciledStock,
+                        minStockThreshold = cloudProduct.minStockThreshold
+                    )
+                )
+            } else {
+                productDao.insertProduct(
+                    localProduct.copy(
+                        name = cloudProduct.name,
+                        category = cloudProduct.category,
+                        costPrice = cloudProduct.costPrice,
+                        sellingPrice = cloudProduct.sellingPrice,
+                        stockQuantity = reconciledStock,
+                        minStockThreshold = cloudProduct.minStockThreshold
+                    )
+                )
+            }
+        }
+
+        // 5. For each new cloud sale, insert it locally and its sale items
+        for (cloudSale in newCloudSales) {
+            val newLocalSaleId = saleDao.insertSale(
+                Sale(
+                    timestamp = cloudSale.timestamp,
+                    totalAmount = cloudSale.totalAmount,
+                    totalProfit = cloudSale.totalProfit,
+                    paymentMode = cloudSale.paymentMode,
+                    soldBy = cloudSale.soldBy,
+                    customerPhone = cloudSale.customerPhone
+                )
+            ).toInt()
+
+            val matchingCloudItems = cloudSaleItems.filter { it.saleId == cloudSale.id }
+            val itemsToInsert = matchingCloudItems.map { cloudItem ->
+                val matchedProd = productDao.getProductByBarcode(cloudItem.barcode)
+                val resolvedProductId = matchedProd?.id ?: 0
+                SaleItem(
+                    saleId = newLocalSaleId,
+                    productId = resolvedProductId,
+                    productName = cloudItem.productName,
+                    barcode = cloudItem.barcode,
+                    quantity = cloudItem.quantity,
+                    sellingPrice = cloudItem.sellingPrice,
+                    costPrice = cloudItem.costPrice
+                )
+            }
+            saleDao.insertSaleItems(itemsToInsert)
         }
     }
 }

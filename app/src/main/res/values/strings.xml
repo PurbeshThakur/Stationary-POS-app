@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Purbesh Stationary</string>
+    <string name="firebase_database_url">https://shop-inventory-app-eb2b4-default-rtdb.asia-southeast1.firebasedatabase.app</string>
+    <string name="google_api_key">AIzaSyAEqkzOv1khtMy_tbUPLFTcll1SUCnntpE</string>
+    <string name="project_id">shop-inventory-app-eb2b4</string>
+    <string name="google_app_id">1:1033570612012:android:1930b56bfab7c06b07b289</string>
 </resources>

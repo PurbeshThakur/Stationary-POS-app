@@ -40,6 +40,7 @@ fun ReportsScreen(
     val saleItems by viewModel.allSaleItems.collectAsState()
     val expenses by viewModel.expensesListState.collectAsState()
     val shopName by viewModel.shopName.collectAsState()
+    val panNumber by viewModel.panNumber.collectAsState()
 
     // Tab state: 0 = Sales & Export, 1 = Expenses & Bills
     var selectedTabState by remember { mutableStateOf(0) }
@@ -67,6 +68,38 @@ fun ReportsScreen(
     val loggedInUser by viewModel.loggedInUser.collectAsState()
     var unlockPin by remember { mutableStateOf("") }
     var unlockError by remember { mutableStateOf(false) }
+
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredSales = remember(sales, saleItems, searchQuery) {
+        if (searchQuery.isBlank()) {
+            sales
+        } else {
+            val query = searchQuery.trim().lowercase(Locale.getDefault())
+            sales.filter { sale ->
+                val sdf = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
+                val dateStr = sdf.format(Date(sale.timestamp)).lowercase(Locale.getDefault())
+                
+                val invoiceStr = (1000 + sale.id).toString()
+                val invoiceFormatted = "sale #$invoiceStr"
+                val phoneStr = sale.customerPhone.lowercase(Locale.getDefault())
+                val amountStr = sale.totalAmount.toString()
+                val amountFormatted = "npr ${String.format("%.2f", sale.totalAmount)}"
+                
+                val matchesItems = saleItems.filter { it.saleId == sale.id }.any { item ->
+                    item.productName.lowercase(Locale.getDefault()).contains(query) ||
+                    item.barcode.lowercase(Locale.getDefault()).contains(query)
+                }
+                
+                invoiceStr.contains(query) ||
+                invoiceFormatted.contains(query) ||
+                phoneStr.contains(query) ||
+                amountStr.contains(query) ||
+                amountFormatted.contains(query) ||
+                dateStr.contains(query) ||
+                matchesItems
+            }
+        }
+    }
 
     val canView = loggedInUser?.canViewReports == true || currentRole == com.example.ui.UserRole.ADMIN
     if (!canView) {
@@ -207,6 +240,12 @@ fun ReportsScreen(
                                 )
                             }
                         }
+                    },
+                    actions = {
+                        com.example.util.LanguageToggle(
+                            viewModel = viewModel,
+                            modifier = Modifier.padding(end = 16.dp)
+                        )
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
@@ -377,6 +416,34 @@ fun ReportsScreen(
                             )
                         }
 
+                        item {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                label = { Text("Search transactions...") },
+                                placeholder = { Text("Invoice, phone, item name, amount, date/time...") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search"
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Clear search"
+                                            )
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
                         if (sales.isEmpty()) {
                             item {
                                 Column(
@@ -391,18 +458,37 @@ fun ReportsScreen(
                                     Text("Go to POS Dashboard to start selling items!", fontSize = 12.sp, color = Color.LightGray)
                                 }
                             }
+                        } else if (filteredSales.isEmpty()) {
+                            item {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 40.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.Search, contentDescription = "No Matches", tint = Color.LightGray, modifier = Modifier.size(64.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("No matching transactions found.", color = Color.Gray)
+                                    Text("Try checking your search keywords, invoice # or phone.", fontSize = 12.sp, color = Color.LightGray)
+                                }
+                            }
                         } else {
-                            items(sales) { sale ->
+                            items(filteredSales) { sale ->
                                 val sdf = remember { SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault()) }
                                 val dateStr = sdf.format(Date(sale.timestamp))
+                                val matchedItems = remember(sale.id, saleItems) {
+                                    saleItems.filter { it.saleId == sale.id }
+                                }
+                                val itemsSummary = remember(matchedItems) {
+                                    matchedItems.joinToString { "${it.productName} x${it.quantity}" }
+                                }
 
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            val matchedItems = saleItems.filter { it.saleId == sale.id }
                                             selectedSaleId = sale.id
-                                            selectedSaleReceipt = buildFormattedReceiptForPastSale(sale, matchedItems, shopName)
+                                            selectedSaleReceipt = buildFormattedReceiptForPastSale(sale, matchedItems, shopName, panNumber)
                                         },
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
@@ -447,8 +533,33 @@ fun ReportsScreen(
                                                 fontSize = 12.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                             )
+                                            if (sale.customerPhone.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = "Phone: ${sale.customerPhone}",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                                )
+                                            }
+                                            if (itemsSummary.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = itemsSummary,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "Sold By: ${sale.soldBy}",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
                                         }
-
+ 
                                         Column(horizontalAlignment = Alignment.End) {
                                             Text(
                                                 text = "NPR ${String.format("%.2f", sale.totalAmount)}",
@@ -860,23 +971,6 @@ fun ReportsScreen(
                             Text("Print Bill / Save as PDF")
                         }
 
-                        Button(
-                            onClick = {
-                                val textToShare = selectedSaleReceipt ?: ""
-                                val saleInvoiceId = "${1000 + (selectedSaleId ?: 0)}"
-                                com.example.util.ReceiptExporter.saveReceiptToDownloads(context, textToShare, saleInvoiceId)
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiary,
-                                contentColor = MaterialTheme.colorScheme.onTertiary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = "Download")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Download Bill (.txt)")
-                        }
-
                         TextButton(
                             onClick = {
                                 selectedSaleReceipt = null
@@ -893,12 +987,15 @@ fun ReportsScreen(
     }
 }
 
-private fun buildFormattedReceiptForPastSale(sale: Sale, items: List<SaleItem>, shopName: String): String {
+private fun buildFormattedReceiptForPastSale(sale: Sale, items: List<SaleItem>, shopName: String, panNumber: String): String {
     val sdf = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.getDefault())
     val dateStr = sdf.format(Date(sale.timestamp))
     val sb = StringBuilder()
     sb.append("===============================\n")
     sb.append("       ${shopName.uppercase()}      \n")
+    if (panNumber.isNotBlank()) {
+        sb.append("       PAN No: $panNumber      \n")
+    }
     sb.append("    Your Premium Writing Hub    \n")
     sb.append("===============================\n")
     sb.append("Date: $dateStr\n")

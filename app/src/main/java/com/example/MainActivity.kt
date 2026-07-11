@@ -101,7 +101,18 @@ fun MainAppLayout() {
                     navItems.forEach { item ->
                         NavigationBarItem(
                             icon = { Icon(item.icon, contentDescription = item.title) },
-                            label = { Text(item.title) },
+                            label = {
+                                val translationKey = when (item.route) {
+                                    "pos" -> "pos_sell"
+                                    "inventory" -> "inventory"
+                                    "reports" -> "reports"
+                                    "ai_advisor" -> "ai_advisor"
+                                    "cloud_sync" -> "cloud_sync"
+                                    "super_admin" -> "admin"
+                                    else -> item.route
+                                }
+                                Text(com.example.util.t(translationKey, viewModel))
+                            },
                             selected = currentRoute == item.route,
                             onClick = {
                                 if (currentRoute != item.route) {

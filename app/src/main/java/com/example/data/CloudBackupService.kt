@@ -19,7 +19,12 @@ data class CloudBackupPayload(
     val saleItems: List<SaleItem>,
     val formattedReport: String? = null,
     val backupTimestamp: Long = System.currentTimeMillis(),
-    val storeName: String = "Purbesh Stationery"
+    val storeName: String = "Purbesh Stationery",
+    val panNumber: String? = null,
+    val users: List<User>? = null,
+    val auditLogs: List<AuditLog>? = null,
+    val expenses: List<Expense>? = null,
+    val customers: List<Customer>? = null
 )
 
 class CloudBackupService {

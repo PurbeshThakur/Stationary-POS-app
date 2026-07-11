@@ -58,6 +58,7 @@ fun DashboardScreen(
     val lowStockList by viewModel.lowStockProducts.collectAsState()
     val checkoutReceipt by viewModel.checkoutReceipt.collectAsState()
     val shopName by viewModel.shopName.collectAsState()
+    val customers by viewModel.customersListState.collectAsState()
 
     var showCameraScanner by remember { mutableStateOf(false) }
     var manualBarcode by remember { mutableStateOf("") }
@@ -68,19 +69,36 @@ fun DashboardScreen(
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var selectedPaymentMode by remember { mutableStateOf("Cash") }
     var customerPhone by remember { mutableStateOf("") }
+    var paymentTransactionId by remember { mutableStateOf("") }
+    var selectedCustomerIdForCredit by remember { mutableStateOf<String?>(null) }
+    var customerDropdownExpanded by remember { mutableStateOf(false) }
 
     // Discount states
     var discountInput by remember { mutableStateOf("") }
     var discountTypeIsPercentage by remember { mutableStateOf(false) } // false = NPR, true = %
 
     val cartTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
-    val discountAmount = remember(discountInput, discountTypeIsPercentage, cartTotal) {
+    val cartCost = cart.entries.sumOf { it.key.costPrice * it.value }
+    val maxDiscount = (cartTotal - cartCost).coerceAtLeast(0.0)
+
+    val discountAmount = remember(discountInput, discountTypeIsPercentage, cartTotal, cartCost) {
         val inputVal = discountInput.toDoubleOrNull() ?: 0.0
-        if (discountTypeIsPercentage) {
-            (cartTotal * (inputVal / 100.0)).coerceIn(0.0, cartTotal)
+        val rawDiscount = if (discountTypeIsPercentage) {
+            cartTotal * (inputVal / 100.0)
         } else {
-            inputVal.coerceIn(0.0, cartTotal)
+            inputVal
         }
+        rawDiscount.coerceIn(0.0, maxDiscount)
+    }
+
+    val isDiscountCapped = remember(discountInput, discountTypeIsPercentage, cartTotal, cartCost) {
+        val inputVal = discountInput.toDoubleOrNull() ?: 0.0
+        val rawDiscount = if (discountTypeIsPercentage) {
+            cartTotal * (inputVal / 100.0)
+        } else {
+            inputVal
+        }
+        rawDiscount > maxDiscount
     }
 
     // QR Payment state
@@ -143,6 +161,11 @@ fun DashboardScreen(
                     val currentRole by viewModel.currentUserRole.collectAsState()
                     val loggedInUser by viewModel.loggedInUser.collectAsState()
                     var showProfileMenu by remember { mutableStateOf(false) }
+
+                    com.example.util.LanguageToggle(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
 
                     Box {
                         IconButton(
@@ -734,31 +757,89 @@ fun DashboardScreen(
     // --- Checkout Confirmation Dialog ---
     if (showCheckoutDialog) {
         AlertDialog(
-            onDismissRequest = { showCheckoutDialog = false },
+            onDismissRequest = { 
+                showCheckoutDialog = false 
+                selectedCustomerIdForCredit = null
+                customerPhone = ""
+                paymentTransactionId = ""
+                discountInput = ""
+            },
             title = { Text("Complete Transaction", fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Enter customer details and select payment mode.")
+                    Text("Select customer account and payment mode.")
                     
-                    OutlinedTextField(
-                        value = customerPhone,
-                        onValueChange = { customerPhone = it },
-                        label = { Text("Customer Mobile (WhatsApp sharing)") },
-                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    // Customer Profile Selector Dropdown
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = selectedCustomerIdForCredit?.let { id ->
+                                customers.find { it.id == id }?.name
+                            } ?: "Select Registered Customer",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Customer Profile" + if (selectedPaymentMode == "Credit") " (Required) *" else " (Optional)") },
+                            leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = "Customer") },
+                            trailingIcon = {
+                                IconButton(onClick = { customerDropdownExpanded = !customerDropdownExpanded }) {
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand")
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { customerDropdownExpanded = !customerDropdownExpanded }
+                        )
+
+                        DropdownMenu(
+                            expanded = customerDropdownExpanded,
+                            onDismissRequest = { customerDropdownExpanded = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            if (customers.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("No customers with store credit account") },
+                                    onClick = { customerDropdownExpanded = false }
+                                )
+                            } else {
+                                customers.forEach { customer ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(customer.name, fontWeight = FontWeight.Bold)
+                                                Text("Phone: ${customer.phone}" + if (!customer.address.isNullOrBlank()) " | Addr: ${customer.address}" else "", fontSize = 11.sp, color = Color.Gray)
+                                            }
+                                        },
+                                        onClick = {
+                                            selectedCustomerIdForCredit = customer.id
+                                            customerPhone = customer.phone
+                                            customerDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedPaymentMode != "Online") {
+                        OutlinedTextField(
+                            value = customerPhone,
+                            onValueChange = { customerPhone = it },
+                            label = { Text("Customer Mobile (WhatsApp sharing)") },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
 
                     Text("Payment Mode", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        listOf("Cash", "Khalti", "Fonepay", "Card").forEach { mode ->
+                        listOf("Cash", "Online", "Credit").forEach { mode ->
                             FilterChip(
                                 selected = selectedPaymentMode == mode,
                                 onClick = { selectedPaymentMode = mode },
@@ -766,6 +847,53 @@ fun DashboardScreen(
                                 modifier = Modifier.weight(1f)
                             )
                         }
+                    }
+
+                    if (selectedPaymentMode == "Online") {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Enter Online Payment Details",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        OutlinedTextField(
+                            value = customerPhone,
+                            onValueChange = { customerPhone = it },
+                            label = { Text("Payment Phone Number (Required) *") },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = paymentTransactionId,
+                            onValueChange = { paymentTransactionId = it },
+                            label = { Text("Transaction ID (Required) *") },
+                            leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = "Transaction ID") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    if (selectedPaymentMode == "Credit" && selectedCustomerIdForCredit == null) {
+                        Text(
+                            text = "⚠️ Please select a registered customer to use Credit payment mode.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (selectedPaymentMode == "Online" && 
+                        (customerPhone.isBlank() || paymentTransactionId.isBlank())) {
+                        Text(
+                            text = "⚠️ Please enter Phone Number and Transaction ID to proceed.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     Text("Apply Discount (Optional)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -818,6 +946,15 @@ fun DashboardScreen(
                             }
                         }
                     }
+
+                    if (isDiscountCapped) {
+                        Text(
+                            text = "⚠️ Discount capped to NPR ${String.format("%.2f", maxDiscount)} to keep price above the cost of NPR ${String.format("%.2f", cartCost)}.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     
                     if (discountAmount > 0.0) {
                         val originalTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
@@ -855,205 +992,38 @@ fun DashboardScreen(
                 }
             },
             confirmButton = {
+                val canConfirm = when (selectedPaymentMode) {
+                    "Credit" -> selectedCustomerIdForCredit != null
+                    "Online" -> customerPhone.isNotBlank() && paymentTransactionId.isNotBlank()
+                    else -> true
+                }
                 Button(
                     onClick = {
                         showCheckoutDialog = false
-                        if (selectedPaymentMode == "Khalti" || selectedPaymentMode == "Fonepay") {
-                            simulatedQrPaid = false
-                            simulatedTxId = ""
-                            showQrPaymentDialog = true
+                        val finalPaymentMode = if (selectedPaymentMode == "Online") {
+                            "Online (TxID: $paymentTransactionId)"
                         } else {
-                            viewModel.performCheckout(selectedPaymentMode, customerPhone, discountAmount)
-                            customerPhone = ""
-                            discountInput = ""
+                            selectedPaymentMode
                         }
-                    }
+                        viewModel.performCheckout(finalPaymentMode, customerPhone, discountAmount, selectedCustomerIdForCredit)
+                        customerPhone = ""
+                        paymentTransactionId = ""
+                        selectedCustomerIdForCredit = null
+                        discountInput = ""
+                    },
+                    enabled = canConfirm
                 ) {
                     Text("Confirm Checkout")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCheckoutDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    // --- QR Code Integration Payment Dialog ---
-    if (showQrPaymentDialog) {
-        val cartMap by viewModel.cart.collectAsState()
-        val cartTotal = cartMap.entries.sumOf { it.key.sellingPrice * it.value }
-        val qrColor = if (selectedPaymentMode == "Khalti") Color(0xFF5C2D91) else Color(0xFFD91F26)
-        
-        AlertDialog(
-            onDismissRequest = { showQrPaymentDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.QrCodeScanner,
-                        contentDescription = "QR Code",
-                        tint = qrColor
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Scan to Pay via $selectedPaymentMode",
-                        fontWeight = FontWeight.Bold,
-                        color = qrColor
-                    )
-                }
-            },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Scan QR to receive payment directly into Purbesh Stationary's merchant account.",
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    // Draw the custom high-contrast Canvas QR code
-                    Box(
-                        modifier = Modifier
-                            .size(180.dp)
-                            .background(Color.White, RoundedCornerShape(12.dp))
-                            .border(2.dp, qrColor, RoundedCornerShape(12.dp))
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        androidx.compose.foundation.Canvas(modifier = Modifier.size(140.dp)) {
-                            val size = size.width
-                            val blockSize = size / 8
-                            
-                            // Draw positioning squares (corners)
-                            // Top-left
-                            drawRect(color = qrColor, topLeft = androidx.compose.ui.geometry.Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(blockSize * 2, blockSize * 2))
-                            drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(blockSize * 0.4f, blockSize * 0.4f), size = androidx.compose.ui.geometry.Size(blockSize * 1.2f, blockSize * 1.2f))
-                            drawRect(color = qrColor, topLeft = androidx.compose.ui.geometry.Offset(blockSize * 0.6f, blockSize * 0.6f), size = androidx.compose.ui.geometry.Size(blockSize * 0.8f, blockSize * 0.8f))
-
-                            // Top-right
-                            drawRect(color = qrColor, topLeft = androidx.compose.ui.geometry.Offset(size - blockSize * 2, 0f), size = androidx.compose.ui.geometry.Size(blockSize * 2, blockSize * 2))
-                            drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(size - blockSize * 1.6f, blockSize * 0.4f), size = androidx.compose.ui.geometry.Size(blockSize * 1.2f, blockSize * 1.2f))
-                            drawRect(color = qrColor, topLeft = androidx.compose.ui.geometry.Offset(size - blockSize * 1.4f, blockSize * 0.6f), size = androidx.compose.ui.geometry.Size(blockSize * 0.8f, blockSize * 0.8f))
-
-                            // Bottom-left
-                            drawRect(color = qrColor, topLeft = androidx.compose.ui.geometry.Offset(0f, size - blockSize * 2), size = androidx.compose.ui.geometry.Size(blockSize * 2, blockSize * 2))
-                            drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(blockSize * 0.4f, size - blockSize * 1.6f), size = androidx.compose.ui.geometry.Size(blockSize * 1.2f, blockSize * 1.2f))
-                            drawRect(color = qrColor, topLeft = androidx.compose.ui.geometry.Offset(blockSize * 0.6f, size - blockSize * 1.4f), size = androidx.compose.ui.geometry.Size(blockSize * 0.8f, blockSize * 0.8f))
-
-                            // Draw some mock random QR block patterns
-                            val random = java.util.Random(cartTotal.toLong() + selectedPaymentMode.hashCode())
-                            for (i in 0..7) {
-                                for (j in 0..7) {
-                                    // Skip corner regions
-                                    if ((i < 2 && j < 2) || (i > 5 && j < 2) || (i < 2 && j > 5)) continue
-                                    if (random.nextBoolean()) {
-                                        drawRect(
-                                            color = qrColor,
-                                            topLeft = androidx.compose.ui.geometry.Offset(i * blockSize, j * blockSize),
-                                            size = androidx.compose.ui.geometry.Size(blockSize, blockSize)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Center icon with initial
-                        Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .background(Color.White, RoundedCornerShape(4.dp))
-                                .border(1.5.dp, qrColor, RoundedCornerShape(4.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (selectedPaymentMode == "Khalti") "K" else "F",
-                                color = qrColor,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-
-                    val actualTotal = (cartTotal - discountAmount).coerceAtLeast(0.0)
-                    if (discountAmount > 0.0) {
-                        Text(
-                            text = "Original subtotal: NPR ${String.format("%.2f", cartTotal)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
-                            color = Color.Gray
-                        )
-                        Text(
-                            text = "Discount applied: - NPR ${String.format("%.2f", discountAmount)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Text(
-                        text = "Total Amount: NPR ${String.format("%.2f", actualTotal)}",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 18.sp,
-                        color = qrColor
-                    )
-
-                    Surface(
-                        color = if (simulatedQrPaid) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            if (simulatedQrPaid) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = "Paid", tint = Color(0xFF2E7D32))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Payment Confirmed!", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                                }
-                                Text("TxID: $simulatedTxId", fontSize = 11.sp, color = Color.Gray)
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = qrColor)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Awaiting payment...", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Button(
-                                    onClick = {
-                                        simulatedQrPaid = true
-                                        simulatedTxId = "TXN_KP_${System.currentTimeMillis().toString().takeLast(6)}"
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = qrColor),
-                                    modifier = Modifier.fillMaxWidth(0.8f)
-                                ) {
-                                    Text("Simulate Payment Success")
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showQrPaymentDialog = false
-                        viewModel.performCheckout(selectedPaymentMode, customerPhone, discountAmount)
-                        customerPhone = ""
-                        discountInput = ""
-                    },
-                    enabled = simulatedQrPaid
-                ) {
-                    Text("Complete Sale")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showQrPaymentDialog = false }) {
+                TextButton(onClick = { 
+                    showCheckoutDialog = false 
+                    selectedCustomerIdForCredit = null
+                    customerPhone = ""
+                    paymentTransactionId = ""
+                    discountInput = ""
+                }) {
                     Text("Cancel")
                 }
             }
@@ -1226,23 +1196,6 @@ fun DashboardScreen(
                         Icon(Icons.Default.Print, contentDescription = "Print")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Print Bill / Save as PDF")
-                    }
-
-                    Button(
-                        onClick = {
-                            val textToShare = checkoutReceipt ?: ""
-                            val timestampStr = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
-                            com.example.util.ReceiptExporter.saveReceiptToDownloads(context, textToShare, timestampStr)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.tertiary,
-                            contentColor = MaterialTheme.colorScheme.onTertiary
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = "Download")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download Bill (.txt)")
                     }
 
                     TextButton(

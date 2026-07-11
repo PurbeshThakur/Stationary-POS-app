@@ -172,6 +172,12 @@ fun AiAdvisorScreen(
                         }
                     }
                 },
+                actions = {
+                    com.example.util.LanguageToggle(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )

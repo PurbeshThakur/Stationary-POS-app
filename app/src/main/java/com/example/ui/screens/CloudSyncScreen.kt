@@ -33,19 +33,11 @@ import android.util.Log
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.ui.CloudBackupState
 import com.example.ui.InventoryViewModel
+import com.example.data.FirebaseSyncState
 import java.text.SimpleDateFormat
 import java.util.*
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import com.google.android.gms.auth.GoogleAuthUtil
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,37 +52,7 @@ fun CloudSyncScreen(
     val cloudBackupState by viewModel.cloudBackupState.collectAsState()
     val shopName by viewModel.shopName.collectAsState()
 
-    val googleAccountEmail by viewModel.googleAccountEmail.collectAsState()
-    val googleAccountName by viewModel.googleAccountName.collectAsState()
-    val googleDriveBackupState by viewModel.googleDriveBackupState.collectAsState()
-
     val scope = rememberCoroutineScope()
-
-    val gso = remember {
-        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestScopes(Scope("https://www.googleapis.com/auth/drive.file"))
-            .build()
-    }
-    val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                if (account != null) {
-                    viewModel.setGoogleAccount(account.email, account.displayName)
-                    Toast.makeText(context, "Google Account connected: ${account.email}", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Log.e("CloudSyncScreen", "Google Sign-In failed", e)
-                Toast.makeText(context, "Connection failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
 
     val products by viewModel.allProducts.collectAsState()
     val sales by viewModel.allSales.collectAsState()
@@ -98,6 +60,15 @@ fun CloudSyncScreen(
     var inputVaultId by remember { mutableStateOf("") }
     var showConfirmRestoreDialog by remember { mutableStateOf(false) }
     var showReportViewerDialog by remember { mutableStateOf(false) }
+
+    val firebaseSyncEnabled = viewModel.firebaseRealtimeManager.isSyncEnabled()
+    val firebaseSyncState by viewModel.firebaseRealtimeManager.syncState.collectAsState()
+
+    var isFbEnabled by remember { mutableStateOf(firebaseSyncEnabled) }
+    var fbDbUrl by remember { mutableStateOf(viewModel.firebaseRealtimeManager.getDatabaseUrl()) }
+    var fbApiKey by remember { mutableStateOf(viewModel.firebaseRealtimeManager.getApiKey()) }
+    var fbProjectId by remember { mutableStateOf(viewModel.firebaseRealtimeManager.getProjectId()) }
+    var fbAppId by remember { mutableStateOf(viewModel.firebaseRealtimeManager.getAppId()) }
 
     // Sync input with state if updated
     LaunchedEffect(cloudVaultId) {
@@ -121,19 +92,7 @@ fun CloudSyncScreen(
         }
     }
 
-    LaunchedEffect(googleDriveBackupState) {
-        when (googleDriveBackupState) {
-            is CloudBackupState.Success -> {
-                Toast.makeText(context, (googleDriveBackupState as CloudBackupState.Success).message, Toast.LENGTH_LONG).show()
-                viewModel.resetGoogleDriveBackupState()
-            }
-            is CloudBackupState.Error -> {
-                Toast.makeText(context, (googleDriveBackupState as CloudBackupState.Error).message, Toast.LENGTH_LONG).show()
-                viewModel.resetGoogleDriveBackupState()
-            }
-            else -> {}
-        }
-    }
+
 
     Scaffold(
         topBar = {
@@ -172,6 +131,12 @@ fun CloudSyncScreen(
                             )
                         }
                     }
+                },
+                actions = {
+                    com.example.util.LanguageToggle(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
@@ -372,174 +337,7 @@ fun CloudSyncScreen(
                 }
             }
 
-            // Google Drive Cloud Backup Card
-            item {
-                val isGoogleConnected = googleAccountEmail.isNotBlank()
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CloudUpload,
-                                contentDescription = "Google Drive",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                text = "Google Drive Backup",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
 
-                        if (isGoogleConnected) {
-                            Text(
-                                text = "Your Google account is connected. You can perform full database backups and restores directly using your personal Google Drive storage space.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            // Display connected email details
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccountCircle,
-                                        contentDescription = "Account",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Column {
-                                        Text(
-                                            text = if (googleAccountName.isNotBlank()) googleAccountName else "Google User",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp
-                                        )
-                                        Text(
-                                            text = googleAccountEmail,
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-                                }
-
-                                TextButton(
-                                    onClick = {
-                                        googleSignInClient.signOut().addOnCompleteListener {
-                                            viewModel.setGoogleAccount(null, null)
-                                            Toast.makeText(context, "Google Account disconnected.", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Icon(Icons.Default.Logout, contentDescription = "Disconnect")
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Disconnect", fontSize = 11.sp)
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            try {
-                                                val account = GoogleSignIn.getLastSignedInAccount(context)
-                                                if (account == null) {
-                                                    Toast.makeText(context, "Please connect your Google Account first.", Toast.LENGTH_SHORT).show()
-                                                    return@launch
-                                                }
-                                                val token = withContext(Dispatchers.IO) {
-                                                    GoogleAuthUtil.getToken(context, account.email!!, "oauth2:https://www.googleapis.com/auth/drive.file")
-                                                }
-                                                if (token != null) {
-                                                    viewModel.backupToGoogleDrive(token)
-                                                }
-                                            } catch (e: Exception) {
-                                                Log.e("CloudSyncScreen", "Failed to obtain auth token", e)
-                                                Toast.makeText(context, "Authorization failed. Please try connecting your account again.", Toast.LENGTH_LONG).show()
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Upload, contentDescription = "Back Up")
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Back Up")
-                                }
-
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            try {
-                                                val account = GoogleSignIn.getLastSignedInAccount(context)
-                                                if (account == null) {
-                                                    Toast.makeText(context, "Please connect your Google Account first.", Toast.LENGTH_SHORT).show()
-                                                    return@launch
-                                                }
-                                                val token = withContext(Dispatchers.IO) {
-                                                    GoogleAuthUtil.getToken(context, account.email!!, "oauth2:https://www.googleapis.com/auth/drive.file")
-                                                }
-                                                if (token != null) {
-                                                    viewModel.restoreFromGoogleDrive(token)
-                                                }
-                                            } catch (e: Exception) {
-                                                Log.e("CloudSyncScreen", "Failed to obtain auth token", e)
-                                                Toast.makeText(context, "Authorization failed. Please try connecting your account again.", Toast.LENGTH_LONG).show()
-                                            }
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Download, contentDescription = "Restore")
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Restore")
-                                }
-                            }
-                        } else {
-                            Text(
-                                text = "Connect your Google account to back up and sync your store's inventory, sales records, and report documents directly into your Google Drive securely.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-
-                            Button(
-                                onClick = {
-                                    val signInIntent = googleSignInClient.signInIntent
-                                    googleSignInLauncher.launch(signInIntent)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Icon(Icons.Default.Login, contentDescription = "Connect Google")
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Connect Google Account")
-                            }
-                        }
-                    }
-                }
-            }
 
             // Cloud Synced Actions Panel (Only active when Vault is set, otherwise display overlay)
             item {
@@ -712,6 +510,230 @@ fun CloudSyncScreen(
                             Icon(Icons.Default.Receipt, contentDescription = "Report")
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("View & Share Cloud Reports")
+                        }
+                    }
+                }
+            }
+
+            // Firebase Realtime Database Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Firebase Real-time Sync",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            
+                            // Badge indicating connection status
+                            val statusText: String
+                            val statusBgColor: Color
+                            val statusTextColor: Color
+                            
+                            when (firebaseSyncState) {
+                                is FirebaseSyncState.Idle -> {
+                                    statusText = "Disabled"
+                                    statusBgColor = MaterialTheme.colorScheme.surfaceVariant
+                                    statusTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                is FirebaseSyncState.Connecting -> {
+                                    statusText = "Connecting"
+                                    statusBgColor = MaterialTheme.colorScheme.tertiaryContainer
+                                    statusTextColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                }
+                                is FirebaseSyncState.Connected -> {
+                                    statusText = "Connected"
+                                    statusBgColor = MaterialTheme.colorScheme.primaryContainer
+                                    statusTextColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                }
+                                is FirebaseSyncState.Error -> {
+                                    statusText = "Error"
+                                    statusBgColor = MaterialTheme.colorScheme.errorContainer
+                                    statusTextColor = MaterialTheme.colorScheme.onErrorContainer
+                                }
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(statusBgColor)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = statusText,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = statusTextColor
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Enable instantaneous bi-directional synchronization. This keeps products, stock levels, and sale transactions perfectly synchronized across multiple terminals and tablets.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // Toggle
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(Icons.Default.CloudSync, contentDescription = "Firebase Sync", tint = MaterialTheme.colorScheme.primary)
+                                Column {
+                                    Text("Firebase Real-time Sync", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Sync changes instantly using RTDB", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                }
+                            }
+                            Switch(
+                                checked = isFbEnabled,
+                                onCheckedChange = { checked ->
+                                    isFbEnabled = checked
+                                    viewModel.firebaseRealtimeManager.setSyncEnabled(checked)
+                                    if (checked) {
+                                        viewModel.startFirebaseSync()
+                                        Toast.makeText(context, "Firebase Sync Enabled!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Firebase Sync Disabled.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                        }
+
+                        AnimatedVisibility(visible = isFbEnabled) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = fbDbUrl,
+                                    onValueChange = { fbDbUrl = it },
+                                    label = { Text("Firebase RTDB URL") },
+                                    placeholder = { Text("https://<your-app>-default-rtdb.firebaseio.com/") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                    )
+                                )
+
+                                OutlinedTextField(
+                                    value = fbApiKey,
+                                    onValueChange = { fbApiKey = it },
+                                    label = { Text("Web API Key (Optional)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                    )
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = fbProjectId,
+                                        onValueChange = { fbProjectId = it },
+                                        label = { Text("Project ID") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                        )
+                                    )
+
+                                    OutlinedTextField(
+                                        value = fbAppId,
+                                        onValueChange = { fbAppId = it },
+                                        label = { Text("App ID") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1.2f),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                        )
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            focusManager.clearFocus()
+                                            viewModel.firebaseRealtimeManager.setDatabaseUrl(fbDbUrl)
+                                            viewModel.firebaseRealtimeManager.setApiKey(fbApiKey)
+                                            viewModel.firebaseRealtimeManager.setProjectId(fbProjectId)
+                                            viewModel.firebaseRealtimeManager.setAppId(fbAppId)
+                                            val ok = viewModel.firebaseRealtimeManager.initFirebase()
+                                            if (ok) {
+                                                viewModel.startFirebaseSync()
+                                                Toast.makeText(context, "Successfully saved & connected!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Connection failed. Check URL.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Text("Save & Connect")
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            if (cloudVaultId.isBlank()) {
+                                                Toast.makeText(context, "Please set a Cloud Vault ID first (used as database child node).", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                viewModel.triggerFirebaseFullUpload { success ->
+                                                    scope.launch(Dispatchers.Main) {
+                                                        if (success) {
+                                                            Toast.makeText(context, "Database successfully uploaded to Firebase RTDB!", Toast.LENGTH_LONG).show()
+                                                        } else {
+                                                            Toast.makeText(context, "Database upload failed. Verify database rules & credentials.", Toast.LENGTH_LONG).show()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                    ) {
+                                        Text("Force Upload DB")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

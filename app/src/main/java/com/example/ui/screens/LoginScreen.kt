@@ -34,6 +34,10 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.InventoryViewModel
 import com.example.ui.User
 import com.example.ui.UserRole
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.example.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,17 +68,38 @@ fun LoginScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                            MaterialTheme.colorScheme.surface
-                        )
-                    )
-                ),
+                .padding(innerPadding),
             contentAlignment = Alignment.Center
         ) {
+            // High-quality native atmospheric background gradient
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF14051D), // Deep dark violet
+                                Color(0xFF09030C), // Dark purple-black
+                                Color(0xFF000000)  // Pure black
+                            )
+                        )
+                    )
+            ) {
+                // Ambient center radial glow
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFF2A0B30).copy(alpha = 0.6f),
+                                    Color.Transparent
+                                ),
+                                radius = 2000f
+                            )
+                        )
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth(0.92f)
@@ -119,7 +144,7 @@ fun LoginScreen(
                 )
 
                 Text(
-                    text = "Smart Retail POS & Inventory System",
+                    text = com.example.util.t("subtitle", viewModel),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
@@ -130,7 +155,7 @@ fun LoginScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(
@@ -139,7 +164,7 @@ fun LoginScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            text = "Select User Profile",
+                            text = com.example.util.t("select_profile", viewModel),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -231,7 +256,7 @@ fun LoginScreen(
                                     Divider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
                                     Text(
-                                        text = "Enter 4-Digit Security PIN",
+                                        text = com.example.util.t("enter_pin", viewModel),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -245,7 +270,7 @@ fun LoginScreen(
                                                 showError = false
                                             }
                                         },
-                                        label = { Text("Security PIN") },
+                                        label = { Text(com.example.util.t("security_pin", viewModel)) },
                                         placeholder = { Text("••••") },
                                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "PIN") },
                                         trailingIcon = {
@@ -300,7 +325,7 @@ fun LoginScreen(
                                     ) {
                                         Icon(Icons.Default.Login, contentDescription = "Log In")
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Log In", fontWeight = FontWeight.Bold)
+                                        Text(com.example.util.t("log_in", viewModel), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -308,15 +333,23 @@ fun LoginScreen(
                     }
                 }
 
-                // Help footer
+                // Help footer (PINs hidden securely, support contact number displayed)
                 Text(
-                    text = "Need assistance? Admin PIN is '1111' or '1234'. Staff PIN is '0000' or '2222'.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
+                    text = "Need assistance? Contact 9746638620",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 12.dp)
                 )
             }
+
+            com.example.util.LanguageToggle(
+                viewModel = viewModel,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            )
         }
     }
 }

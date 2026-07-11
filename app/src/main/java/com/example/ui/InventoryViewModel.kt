@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -18,34 +20,11 @@ sealed interface AiTipsState {
     data class Error(val message: String) : AiTipsState
 }
 
-enum class UserRole(val label: String) {
-    ADMIN("Admin"),
-    CASHIER("Cashier/Staff")
-}
-
-@com.squareup.moshi.JsonClass(generateAdapter = true)
-data class User(
-    val username: String,
-    val role: UserRole,
-    val pin: String,
-    val fullName: String,
-    val avatarColor: Long,
-    val isEnabled: Boolean = true,
-    val canManageInventory: Boolean = true,
-    val canViewReports: Boolean = true,
-    val canPerformSale: Boolean = true,
-    val canUseAiAdvisor: Boolean = true,
-    val isSuperAdmin: Boolean = false
-)
-
-@com.squareup.moshi.JsonClass(generateAdapter = true)
-data class AuditLog(
-    val timestamp: Long,
-    val username: String,
-    val fullName: String,
-    val action: String,
-    val details: String = ""
-)
+typealias UserRole = com.example.data.UserRole
+typealias User = com.example.data.User
+typealias AuditLog = com.example.data.AuditLog
+typealias Expense = com.example.data.Expense
+typealias Customer = com.example.data.Customer
 
 data class SmsAlert(
     val id: Int,
@@ -55,23 +34,6 @@ data class SmsAlert(
     val timestamp: Long
 )
 
-@com.squareup.moshi.JsonClass(generateAdapter = true)
-data class Expense(
-    val id: String,
-    val title: String,
-    val category: String,
-    val amount: Double,
-    val timestamp: Long,
-    val description: String = ""
-)
-
-@com.squareup.moshi.JsonClass(generateAdapter = true)
-data class Customer(
-    val id: String,
-    val name: String,
-    val phone: String,
-    val storeCredit: Double = 0.0
-)
 
 sealed interface CloudBackupState {
     object Idle : CloudBackupState
@@ -86,8 +48,84 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val repository = StationeryRepository(database.productDao(), database.saleDao())
     private val geminiService = GeminiService()
     private val cloudService = CloudBackupService()
-    private val googleDriveService = GoogleDriveBackupService()
     private val sharedPrefs = application.getSharedPreferences("stationery_backup_prefs", Context.MODE_PRIVATE)
+
+    private val _cloudVaultId = MutableStateFlow<String>(sharedPrefs.getString("cloud_vault_id", "") ?: "")
+    val cloudVaultId: StateFlow<String> = _cloudVaultId.asStateFlow()
+
+    val firebaseRealtimeManager = com.example.data.FirebaseRealtimeManager(application, sharedPrefs)
+
+    fun startFirebaseSync() {
+        if (firebaseRealtimeManager.isSyncEnabled() && _cloudVaultId.value.isNotBlank()) {
+            firebaseRealtimeManager.startListening(
+                vaultId = _cloudVaultId.value,
+                scope = viewModelScope,
+                repository = repository,
+                onSyncUpdate = { msg ->
+                    Log.d("InventoryViewModel", "Firebase Sync Update: $msg")
+                },
+                onMetadataSync = { users, logs, expenses, customers, shopName, panNumber ->
+                    viewModelScope.launch(Dispatchers.Main) {
+                        if (users != null && users.isNotEmpty()) {
+                            _usersListState.value = users
+                            saveUsersList(users)
+                            
+                            // Sync current logged-in user permissions/role if updated in cloud
+                            _loggedInUser.value?.let { loggedIn ->
+                                users.find { u -> u.username.equals(loggedIn.username, ignoreCase = true) }?.let { updatedUser ->
+                                    _loggedInUser.value = updatedUser
+                                    _currentUserRole.value = updatedUser.role
+                                }
+                            }
+                        }
+                        if (logs != null && logs.isNotEmpty()) {
+                            _auditLogs.value = logs
+                            saveAuditLogs(logs)
+                        }
+                        if (expenses != null && expenses.isNotEmpty()) {
+                            _expensesListState.value = expenses
+                            saveExpenses(expenses)
+                        }
+                        if (customers != null && customers.isNotEmpty()) {
+                            _customersListState.value = customers
+                            saveCustomers(customers)
+                        }
+                        if (shopName != null && shopName.isNotBlank() && shopName != _shopName.value) {
+                            sharedPrefs.edit().putString("business_shop_name", shopName).apply()
+                            _shopName.value = shopName
+                        }
+                        if (panNumber != null && panNumber.isNotBlank() && panNumber != _panNumber.value) {
+                            sharedPrefs.edit().putString("business_pan_number", panNumber).apply()
+                            _panNumber.value = panNumber
+                        }
+                    }
+                }
+            )
+        } else {
+            firebaseRealtimeManager.stopListening()
+        }
+    }
+
+    fun triggerFirebaseFullUpload(onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val products = repository.productDao.getAllProductsList()
+            val sales = repository.saleDao.getAllSalesList()
+            val saleItems = repository.saleDao.getAllSaleItemsList()
+            firebaseRealtimeManager.pushAllData(
+                vaultId = _cloudVaultId.value,
+                products = products,
+                sales = sales,
+                saleItems = saleItems,
+                users = _usersListState.value,
+                auditLogs = _auditLogs.value,
+                expenses = _expensesListState.value,
+                customers = _customersListState.value,
+                shopName = _shopName.value,
+                panNumber = _panNumber.value,
+                onComplete = onComplete
+            )
+        }
+    }
 
     private val moshi = com.squareup.moshi.Moshi.Builder()
         .addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory())
@@ -141,8 +179,114 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val _receiptShowDiscountBreakdown = MutableStateFlow(sharedPrefs.getBoolean("receipt_show_discount_breakdown", true))
     val receiptShowDiscountBreakdown: StateFlow<Boolean> = _receiptShowDiscountBreakdown.asStateFlow()
 
+    private val _appLanguage = MutableStateFlow(sharedPrefs.getString("app_language", "en") ?: "en")
+    val appLanguage: StateFlow<String> = _appLanguage.asStateFlow()
+
+    fun setAppLanguage(lang: String) {
+        _appLanguage.value = lang
+        sharedPrefs.edit().putString("app_language", lang).apply()
+    }
+
     init {
         loadUsersAndLogs()
+        populateDbIfEmpty()
+        
+        // Ensure default cloud vault ID exists for immediate sync
+        if (_cloudVaultId.value.isBlank()) {
+            sharedPrefs.edit().putString("cloud_vault_id", "default_shop_vault").apply()
+            _cloudVaultId.value = "default_shop_vault"
+        }
+        
+        startRealtimeSyncLoop()
+        startFirebaseSync()
+    }
+
+    private fun populateDbIfEmpty() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val currentProducts = repository.productDao.getAllProductsList()
+                if (currentProducts.isEmpty()) {
+                    val sampleProducts = listOf(
+                        Product(
+                            name = "Pilot V5 Blue Liquid Ink Pen",
+                            barcode = "89012341",
+                            category = "Pens & Pencils",
+                            costPrice = 40.0,
+                            sellingPrice = 60.0,
+                            stockQuantity = 25,
+                            minStockThreshold = 8
+                        ),
+                        Product(
+                            name = "Classmate A4 Notebook (120 Pages)",
+                            barcode = "89012342",
+                            category = "Notebooks",
+                            costPrice = 35.0,
+                            sellingPrice = 50.0,
+                            stockQuantity = 3,
+                            minStockThreshold = 5
+                        ),
+                        Product(
+                            name = "Natraj HB Wooden Pencil (Pack of 10)",
+                            barcode = "89012343",
+                            category = "Pens & Pencils",
+                            costPrice = 30.0,
+                            sellingPrice = 45.0,
+                            stockQuantity = 15,
+                            minStockThreshold = 4
+                        ),
+                        Product(
+                            name = "Parker Vector Rollerball Pen",
+                            barcode = "89012344",
+                            category = "Pens & Pencils",
+                            costPrice = 220.0,
+                            sellingPrice = 350.0,
+                            stockQuantity = 8,
+                            minStockThreshold = 2
+                        ),
+                        Product(
+                            name = "Camel Watercolor Cake Set (12 Colors)",
+                            barcode = "89012345",
+                            category = "Art Supplies",
+                            costPrice = 110.0,
+                            sellingPrice = 160.0,
+                            stockQuantity = 2,
+                            minStockThreshold = 5
+                        ),
+                        Product(
+                            name = "Fevicol MR Squeezy Adhesive Glue (50g)",
+                            barcode = "89012346",
+                            category = "Adhesives & Tape",
+                            costPrice = 15.0,
+                            sellingPrice = 25.0,
+                            stockQuantity = 45,
+                            minStockThreshold = 10
+                        ),
+                        Product(
+                            name = "Cello Gripper Black Ball Pen",
+                            barcode = "89012347",
+                            category = "Pens & Pencils",
+                            costPrice = 6.0,
+                            sellingPrice = 10.0,
+                            stockQuantity = 110,
+                            minStockThreshold = 20
+                        ),
+                        Product(
+                            name = "Kangaro Heavy Duty Stapler No.10",
+                            barcode = "89012348",
+                            category = "Office Stationery",
+                            costPrice = 80.0,
+                            sellingPrice = 120.0,
+                            stockQuantity = 12,
+                            minStockThreshold = 3
+                        )
+                    )
+                    repository.insertProducts(sampleProducts)
+                    Log.d("InventoryViewModel", "Database successfully prepopulated with ${sampleProducts.size} stationery items.")
+                }
+            } catch (e: Exception) {
+                Log.e("InventoryViewModel", "Error populating database", e)
+            }
+        }
     }
 
     private fun loadUsersAndLogs() {
@@ -221,6 +365,10 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         try {
             val json = userListAdapter.toJson(list)
             sharedPrefs.edit().putString("users_list_json", json).apply()
+            val vaultId = _cloudVaultId.value
+            if (vaultId.isNotBlank()) {
+                firebaseRealtimeManager.pushUsersList(vaultId, list)
+            }
         } catch (e: Exception) {
             Log.e("InventoryViewModel", "Error saving users list", e)
         }
@@ -238,57 +386,51 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val _cloudBackupState = MutableStateFlow<CloudBackupState>(CloudBackupState.Idle)
     val cloudBackupState: StateFlow<CloudBackupState> = _cloudBackupState.asStateFlow()
 
-    private val _googleDriveBackupState = MutableStateFlow<CloudBackupState>(CloudBackupState.Idle)
-    val googleDriveBackupState: StateFlow<CloudBackupState> = _googleDriveBackupState.asStateFlow()
-
-    private val _googleAccountEmail = MutableStateFlow<String>(sharedPrefs.getString("google_account_email", "") ?: "")
-    val googleAccountEmail: StateFlow<String> = _googleAccountEmail.asStateFlow()
-
-    private val _googleAccountName = MutableStateFlow<String>(sharedPrefs.getString("google_account_name", "") ?: "")
-    val googleAccountName: StateFlow<String> = _googleAccountName.asStateFlow()
-
-    private val _googleDriveFileId = MutableStateFlow<String>(sharedPrefs.getString("google_drive_file_id", "") ?: "")
-    val googleDriveFileId: StateFlow<String> = _googleDriveFileId.asStateFlow()
-
-    private val _cloudVaultId = MutableStateFlow<String>(sharedPrefs.getString("cloud_vault_id", "") ?: "")
-    val cloudVaultId: StateFlow<String> = _cloudVaultId.asStateFlow()
-
-    private val _autoBackupEnabled = MutableStateFlow<Boolean>(sharedPrefs.getBoolean("auto_backup_enabled", false))
+    private val _autoBackupEnabled = MutableStateFlow<Boolean>(sharedPrefs.getBoolean("auto_backup_enabled", true))
     val autoBackupEnabled: StateFlow<Boolean> = _autoBackupEnabled.asStateFlow()
 
     private val _shopName = MutableStateFlow<String>(sharedPrefs.getString("business_shop_name", "Purbesh Stationery") ?: "Purbesh Stationery")
     val shopName: StateFlow<String> = _shopName.asStateFlow()
 
+    private val _panNumber = MutableStateFlow<String>(sharedPrefs.getString("business_pan_number", "") ?: "")
+    val panNumber: StateFlow<String> = _panNumber.asStateFlow()
+
     fun updateShopName(name: String) {
         sharedPrefs.edit().putString("business_shop_name", name).apply()
         _shopName.value = name
         logAction("Changed Shop Name", "New Name: $name")
-    }
-
-    fun setGoogleAccount(email: String?, displayName: String?) {
-        sharedPrefs.edit()
-            .putString("google_account_email", email ?: "")
-            .putString("google_account_name", displayName ?: "")
-            .apply()
-        _googleAccountEmail.value = email ?: ""
-        _googleAccountName.value = displayName ?: ""
-        if (email.isNullOrBlank()) {
-            setGoogleDriveFileId("")
+        triggerAutoCloudSync()
+        val vaultId = _cloudVaultId.value
+        if (vaultId.isNotBlank()) {
+            firebaseRealtimeManager.pushBusinessInfo(vaultId, name, _panNumber.value)
         }
     }
 
-    fun setGoogleDriveFileId(fileId: String) {
-        sharedPrefs.edit().putString("google_drive_file_id", fileId).apply()
-        _googleDriveFileId.value = fileId
-    }
-
-    fun resetGoogleDriveBackupState() {
-        _googleDriveBackupState.value = CloudBackupState.Idle
+    fun updatePanNumber(pan: String) {
+        sharedPrefs.edit().putString("business_pan_number", pan).apply()
+        _panNumber.value = pan
+        logAction("Changed PAN Number", "New PAN: $pan")
+        triggerAutoCloudSync()
+        val vaultId = _cloudVaultId.value
+        if (vaultId.isNotBlank()) {
+            firebaseRealtimeManager.pushBusinessInfo(vaultId, _shopName.value, pan)
+        }
     }
 
     fun setCloudVaultId(vaultId: String) {
         sharedPrefs.edit().putString("cloud_vault_id", vaultId).apply()
         _cloudVaultId.value = vaultId
+        if (vaultId.isNotBlank()) {
+            viewModelScope.launch {
+                try {
+                    pullAndMergeWithCloud(vaultId)
+                } catch (e: java.lang.Exception) {
+                    Log.e("InventoryViewModel", "Error doing initial pull for Vault ID", e)
+                }
+            }
+        }
+        startRealtimeSyncLoop()
+        startFirebaseSync()
     }
 
     fun setAutoBackupEnabled(enabled: Boolean) {
@@ -351,12 +493,17 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         val trimmed = if (currentLogs.size > 500) currentLogs.take(500) else currentLogs
         _auditLogs.value = trimmed
         saveAuditLogs(trimmed)
+        triggerAutoCloudSync()
     }
 
     fun saveExpenses(list: List<Expense>) {
         try {
             val json = expenseListAdapter.toJson(list)
             sharedPrefs.edit().putString("expenses_list_json", json).apply()
+            val vaultId = _cloudVaultId.value
+            if (vaultId.isNotBlank()) {
+                firebaseRealtimeManager.pushExpenses(vaultId, list)
+            }
         } catch (e: Exception) {
             Log.e("InventoryViewModel", "Error saving expenses", e)
         }
@@ -366,6 +513,10 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         try {
             val json = customerListAdapter.toJson(list)
             sharedPrefs.edit().putString("customers_list_json", json).apply()
+            val vaultId = _cloudVaultId.value
+            if (vaultId.isNotBlank()) {
+                firebaseRealtimeManager.pushCustomers(vaultId, list)
+            }
         } catch (e: Exception) {
             Log.e("InventoryViewModel", "Error saving customers", e)
         }
@@ -391,6 +542,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         _expensesListState.value = list
         saveExpenses(list)
         logAction("Added Expense", "Amount: NPR ${expense.amount}, Category: ${expense.category}")
+        triggerAutoCloudSync()
     }
 
     fun deleteExpense(id: String) {
@@ -399,6 +551,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         _expensesListState.value = list
         saveExpenses(list)
         logAction("Deleted Expense", "ID: $id")
+        triggerAutoCloudSync()
     }
 
     fun addOrUpdateCustomer(customer: Customer) {
@@ -413,6 +566,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         }
         _customersListState.value = list
         saveCustomers(list)
+        triggerAutoCloudSync()
     }
 
     fun deleteCustomer(id: String) {
@@ -421,6 +575,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         _customersListState.value = list
         saveCustomers(list)
         logAction("Deleted Customer", "ID: $id")
+        triggerAutoCloudSync()
     }
 
     fun adjustStoreCredit(customerId: String, amount: Double) {
@@ -432,6 +587,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             _customersListState.value = list
             saveCustomers(list)
             logAction("Adjusted Customer Credit", "Customer: ${updated.name}, Change: $amount, New Balance: ${updated.storeCredit}")
+            triggerAutoCloudSync()
         }
     }
 
@@ -454,6 +610,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             _loggedInUser.value = user
             _currentUserRole.value = user.role
         }
+        triggerAutoCloudSync()
     }
 
     fun deleteUser(username: String) {
@@ -640,20 +797,26 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
 
-            val actualTotalAmount = (totalAmount - discountAmount).coerceAtLeast(0.0)
-            val actualTotalProfit = totalProfit - discountAmount
+            val maxDiscount = totalProfit.coerceAtLeast(0.0)
+            val safeDiscount = discountAmount.coerceAtMost(maxDiscount)
 
+            val actualTotalAmount = (totalAmount - safeDiscount).coerceAtLeast(0.0)
+            val actualTotalProfit = totalProfit - safeDiscount
+
+            val activeUser = _loggedInUser.value?.fullName ?: "Cashier/Staff"
             val sale = Sale(
                 timestamp = timestamp,
                 totalAmount = actualTotalAmount,
                 totalProfit = actualTotalProfit,
-                paymentMode = paymentMode
+                paymentMode = paymentMode,
+                soldBy = activeUser,
+                customerPhone = customerPhone
             )
 
             val success = repository.executeSale(sale, saleItems)
             if (success) {
                 // If checking out as store credit / debt, adjust the selected customer's credit / balance
-                if (customerId != null && (paymentMode.contains("Store Credit", ignoreCase = true) || paymentMode.contains("Debt", ignoreCase = true) || paymentMode.contains("Split", ignoreCase = true))) {
+                if (customerId != null && (paymentMode.equals("Credit", ignoreCase = true) || paymentMode.contains("Credit", ignoreCase = true) || paymentMode.contains("Store Credit", ignoreCase = true) || paymentMode.contains("Debt", ignoreCase = true) || paymentMode.contains("Split", ignoreCase = true))) {
                     var debtAmount = actualTotalAmount
                     if (paymentMode.contains("Split", ignoreCase = true)) {
                         // Extract Store Credit split amount if any
@@ -667,25 +830,32 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                     adjustStoreCredit(customerId, debtAmount)
                 }
 
-                logAction("Completed Sale", "Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", discountAmount)}), Mode: $paymentMode")
+                logAction("Completed Sale", "Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", safeDiscount)}), Mode: $paymentMode")
                 // Generate a formatted receipt for print/sharing
-                val receipt = buildFormattedReceipt(sale, saleItems, customerPhone, discountAmount)
+                val receipt = buildFormattedReceipt(sale, saleItems, customerPhone, safeDiscount)
                 _checkoutReceipt.value = receipt
                 _cart.value = emptyMap() // clear cart on success
 
                 // Trigger automatic SMS receipt
                 if (customerPhone.isNotBlank()) {
-                    val smsText = "Thank you for shopping at ${_shopName.value}! Invoice #${1000 + sale.id} generated. Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", discountAmount)}). Mode: $paymentMode."
+                    val smsText = "Thank you for shopping at ${_shopName.value}! Invoice #${1000 + sale.id} generated. Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", safeDiscount)}). Mode: $paymentMode."
                     sendSms(customerPhone, smsText, "Sale Receipt")
                 }
 
-                // Automatic Cloud Sync & Backup on successful transaction (if enabled)
-                if (_autoBackupEnabled.value) {
-                    if (_cloudVaultId.value.isNotBlank()) {
-                        backupToCloud()
-                    }
-                    if (_googleAccountEmail.value.isNotBlank()) {
-                        backupToGoogleDriveBackground()
+                // Real-time Cloud Sync & Backup on successful transaction
+                if (_cloudVaultId.value.isNotBlank()) {
+                    backupToCloud()
+                }
+
+                // Push to Firebase Realtime Database
+                firebaseRealtimeManager.pushSale(_cloudVaultId.value, sale, saleItems)
+                // Push updated product stock quantities to Firebase
+                saleItems.forEach { item ->
+                    viewModelScope.launch {
+                        val updatedProd = repository.getProductById(item.productId)
+                        if (updatedProd != null) {
+                            firebaseRealtimeManager.pushProduct(_cloudVaultId.value, updatedProd)
+                        }
                     }
                 }
             }
@@ -699,6 +869,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         val shopHeader = _shopName.value.uppercase().padEnd(23).take(23)
         sb.append("===============================\n")
         sb.append("       $shopHeader      \n")
+        if (_panNumber.value.isNotBlank()) {
+            sb.append("       PAN No: ${_panNumber.value}      \n")
+        }
         sb.append("    ${_receiptHeaderNote.value}    \n")
         sb.append("===============================\n")
         sb.append("Date: $dateStr\n")
@@ -744,8 +917,11 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 stockQuantity = stock,
                 minStockThreshold = threshold
             )
-            repository.insertProduct(product)
+            val rowId = repository.insertProduct(product)
+            val savedProduct = product.copy(id = rowId.toInt())
+            firebaseRealtimeManager.pushProduct(_cloudVaultId.value, savedProduct)
             logAction("Added Product", "Name: $name, Barcode: $barcode, Qty: $stock")
+            triggerAutoCloudSync()
         }
     }
 
@@ -753,7 +929,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateProductInInventory(product: Product) {
         viewModelScope.launch {
             repository.updateProduct(product)
+            firebaseRealtimeManager.pushProduct(_cloudVaultId.value, product)
             logAction("Updated Product", "Name: ${product.name}, Stock: ${product.stockQuantity}")
+            triggerAutoCloudSync()
         }
     }
 
@@ -761,7 +939,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteProductFromInventory(product: Product) {
         viewModelScope.launch {
             repository.deleteProduct(product)
+            firebaseRealtimeManager.deleteProduct(_cloudVaultId.value, product)
             logAction("Deleted Product", "Name: ${product.name}")
+            triggerAutoCloudSync()
         }
     }
 
@@ -812,6 +992,82 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    private var syncJob: kotlinx.coroutines.Job? = null
+
+    fun startRealtimeSyncLoop() {
+        syncJob?.cancel()
+        syncJob = viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                try {
+                    val vaultId = _cloudVaultId.value
+                    if (vaultId.isNotBlank()) {
+                        pullAndMergeWithCloud(vaultId)
+                    }
+                } catch (e: Exception) {
+                    Log.e("InventoryViewModel", "Error in real-time sync loop", e)
+                }
+                kotlinx.coroutines.delay(6000) // Poll every 6 seconds
+            }
+        }
+    }
+
+    suspend fun pullAndMergeWithCloud(vaultId: String) = withContext(Dispatchers.IO) {
+        val payload = cloudService.fetchVault(vaultId)
+        if (payload != null) {
+            val lastSync = sharedPrefs.getLong("last_sync_timestamp", 0L)
+            if (payload.backupTimestamp > lastSync) {
+                try {
+                    repository.mergeAndSync(
+                        localProducts = allProducts.value,
+                        localSales = allSales.value,
+                        localSaleItems = allSaleItems.value,
+                        cloudProducts = payload.products,
+                        cloudSales = payload.sales,
+                        cloudSaleItems = payload.saleItems
+                    )
+                    payload.users?.let {
+                        _usersListState.value = it
+                        saveUsersList(it)
+                        
+                        // Sync current logged-in user permissions/role if updated in cloud
+                        _loggedInUser.value?.let { loggedIn ->
+                            it.find { u -> u.username.equals(loggedIn.username, ignoreCase = true) }?.let { updatedUser ->
+                                _loggedInUser.value = updatedUser
+                                _currentUserRole.value = updatedUser.role
+                            }
+                        }
+                    }
+                    payload.auditLogs?.let {
+                        _auditLogs.value = it
+                        saveAuditLogs(it)
+                    }
+                    payload.expenses?.let {
+                        _expensesListState.value = it
+                        saveExpenses(it)
+                    }
+                    payload.customers?.let {
+                        _customersListState.value = it
+                        saveCustomers(it)
+                    }
+                    
+                    sharedPrefs.edit().putLong("last_sync_timestamp", payload.backupTimestamp).apply()
+                    Log.d("InventoryViewModel", "Real-time sync: Database merged with cloud vault $vaultId")
+                } catch (e: Exception) {
+                    Log.e("InventoryViewModel", "Failed to merge cloud database on real-time sync", e)
+                }
+            }
+        }
+    }
+
+    fun triggerAutoCloudSync() {
+        if (_cloudVaultId.value.isNotBlank()) {
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(300)
+                backupToCloud()
+            }
+        }
+    }
+
     /**
      * Uploads the entire DB (products, sales, items) + formatting report to the Cloud
      */
@@ -821,14 +1077,20 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             val products = allProducts.value
             val sales = allSales.value
             val saleItems = allSaleItems.value
+            val timestampToSave = System.currentTimeMillis()
 
             val payload = CloudBackupPayload(
                 products = products,
                 sales = sales,
                 saleItems = saleItems,
                 formattedReport = customReport ?: buildBackupReportString(sales, saleItems),
-                backupTimestamp = System.currentTimeMillis(),
-                storeName = _shopName.value
+                backupTimestamp = timestampToSave,
+                storeName = _shopName.value,
+                panNumber = _panNumber.value,
+                users = _usersListState.value,
+                auditLogs = _auditLogs.value,
+                expenses = _expensesListState.value,
+                customers = _customersListState.value
             )
 
             val currentId = _cloudVaultId.value
@@ -836,6 +1098,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 val newId = cloudService.createNewVault(payload)
                 if (newId != null) {
                     setCloudVaultId(newId)
+                    sharedPrefs.edit().putLong("last_sync_timestamp", timestampToSave).apply()
                     _cloudBackupState.value = CloudBackupState.Success("Cloud Storage Active! Saved under Vault ID: $newId")
                 } else {
                     _cloudBackupState.value = CloudBackupState.Error("Cloud connection failed. Check your internet connectivity.")
@@ -843,6 +1106,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             } else {
                 val success = cloudService.updateVault(currentId, payload)
                 if (success) {
+                    sharedPrefs.edit().putLong("last_sync_timestamp", timestampToSave).apply()
                     _cloudBackupState.value = CloudBackupState.Success("Data safely synchronized to Cloud Vault: $currentId")
                 } else {
                     _cloudBackupState.value = CloudBackupState.Error("Failed to update Vault $currentId. Retrying or resetting ID may help.")
@@ -870,6 +1134,23 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                         sales = payload.sales,
                         saleItems = payload.saleItems
                     )
+                    payload.users?.let {
+                        _usersListState.value = it
+                        saveUsersList(it)
+                    }
+                    payload.auditLogs?.let {
+                        _auditLogs.value = it
+                        saveAuditLogs(it)
+                    }
+                    payload.expenses?.let {
+                        _expensesListState.value = it
+                        saveExpenses(it)
+                    }
+                    payload.customers?.let {
+                        _customersListState.value = it
+                        saveCustomers(it)
+                    }
+                    
                     setCloudVaultId(vaultId)
                     _cloudBackupState.value = CloudBackupState.Success("Database successfully restored! Loaded ${payload.products.size} products & ${payload.sales.size} sales.")
                 } catch (e: Exception) {
@@ -895,133 +1176,4 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         return sb.toString()
     }
 
-    /**
-     * Backs up the local database to the user's connected Google Drive account
-     */
-    fun backupToGoogleDrive(accessToken: String, customReport: String? = null) {
-        viewModelScope.launch {
-            _googleDriveBackupState.value = CloudBackupState.Syncing
-            val products = allProducts.value
-            val sales = allSales.value
-            val saleItems = allSaleItems.value
-
-            val payload = CloudBackupPayload(
-                products = products,
-                sales = sales,
-                saleItems = saleItems,
-                formattedReport = customReport ?: buildBackupReportString(sales, saleItems),
-                backupTimestamp = System.currentTimeMillis(),
-                storeName = _shopName.value
-            )
-
-            var fileId = _googleDriveFileId.value
-            if (fileId.isBlank()) {
-                fileId = googleDriveService.findBackupFile(accessToken) ?: ""
-            }
-
-            if (fileId.isBlank()) {
-                val newId = googleDriveService.createBackupFile(accessToken)
-                if (newId != null) {
-                    setGoogleDriveFileId(newId)
-                    fileId = newId
-                } else {
-                    _googleDriveBackupState.value = CloudBackupState.Error("Could not create backup file on Google Drive.")
-                    return@launch
-                }
-            }
-
-            val success = googleDriveService.uploadBackupData(accessToken, fileId, payload)
-            if (success) {
-                _googleDriveBackupState.value = CloudBackupState.Success("Database successfully backed up to your Google Drive!")
-            } else {
-                _googleDriveBackupState.value = CloudBackupState.Error("Google Drive upload failed. Retrying may help.")
-            }
-        }
-    }
-
-    /**
-     * Restores (downloads) database content from the connected Google Drive file
-     */
-    fun restoreFromGoogleDrive(accessToken: String) {
-        viewModelScope.launch {
-            _googleDriveBackupState.value = CloudBackupState.Syncing
-            var fileId = _googleDriveFileId.value
-            if (fileId.isBlank()) {
-                fileId = googleDriveService.findBackupFile(accessToken) ?: ""
-            }
-
-            if (fileId.isBlank()) {
-                _googleDriveBackupState.value = CloudBackupState.Error("No backup file 'Purbesh_Stationery_Backup.json' found on your Google Drive.")
-                return@launch
-            }
-
-            val payload = googleDriveService.fetchBackupData(accessToken, fileId)
-            if (payload != null) {
-                try {
-                    repository.restoreDatabase(
-                        products = payload.products,
-                        sales = payload.sales,
-                        saleItems = payload.saleItems
-                    )
-                    setGoogleDriveFileId(fileId)
-                    _googleDriveBackupState.value = CloudBackupState.Success("Database successfully restored from Google Drive! Loaded ${payload.products.size} products & ${payload.sales.size} sales.")
-                } catch (e: Exception) {
-                    Log.e("InventoryViewModel", "Google Drive restore failed", e)
-                    _googleDriveBackupState.value = CloudBackupState.Error("Drive backup retrieved but failed to restore locally.")
-                }
-            } else {
-                _googleDriveBackupState.value = CloudBackupState.Error("Failed to fetch backup file from Google Drive.")
-            }
-        }
-    }
-
-    /**
-     * Triggers Google Drive auto-backup in the background silently
-     */
-    fun backupToGoogleDriveBackground() {
-        val email = _googleAccountEmail.value
-        if (email.isBlank()) return
-        viewModelScope.launch {
-            try {
-                val token = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    com.google.android.gms.auth.GoogleAuthUtil.getToken(
-                        getApplication(),
-                        email,
-                        "oauth2:https://www.googleapis.com/auth/drive.file"
-                    )
-                }
-                if (token != null) {
-                    val products = allProducts.value
-                    val sales = allSales.value
-                    val saleItems = allSaleItems.value
-
-                    val payload = CloudBackupPayload(
-                        products = products,
-                        sales = sales,
-                        saleItems = saleItems,
-                        formattedReport = buildBackupReportString(sales, saleItems),
-                        backupTimestamp = System.currentTimeMillis(),
-                        storeName = _shopName.value
-                    )
-
-                    var fileId = _googleDriveFileId.value
-                    if (fileId.isBlank()) {
-                        fileId = googleDriveService.findBackupFile(token) ?: ""
-                    }
-                    if (fileId.isBlank()) {
-                        fileId = googleDriveService.createBackupFile(token) ?: ""
-                        if (fileId.isNotBlank()) {
-                            setGoogleDriveFileId(fileId)
-                        }
-                    }
-                    if (fileId.isNotBlank()) {
-                        googleDriveService.uploadBackupData(token, fileId, payload)
-                        Log.d("InventoryViewModel", "Seamless Google Drive background auto-backup completed.")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("InventoryViewModel", "Google Drive background auto-backup error", e)
-            }
-        }
-    }
 }

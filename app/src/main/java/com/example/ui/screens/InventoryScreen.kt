@@ -112,6 +112,11 @@ fun InventoryScreen(
                     val loggedInUser by viewModel.loggedInUser.collectAsState()
                     var showProfileMenu by remember { mutableStateOf(false) }
 
+                    com.example.util.LanguageToggle(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+
                     if (currentRole == com.example.ui.UserRole.ADMIN) {
                         IconButton(onClick = { showCampaignDialog = true }) {
                             Icon(Icons.Default.Campaign, contentDescription = "SMS Offer Campaign", tint = MaterialTheme.colorScheme.primary)
@@ -549,23 +554,76 @@ fun InventoryScreen(
     // --- Delete Confirmation Dialog ---
     if (showDeleteConfirm != null) {
         val prodToDelete = showDeleteConfirm!!
+        var enteredPin by remember { mutableStateOf("") }
+        var pinError by remember { mutableStateOf(false) }
+        val loggedInUser by viewModel.loggedInUser.collectAsState()
+
         AlertDialog(
-            onDismissRequest = { showDeleteConfirm = null },
-            title = { Text("Delete Product?", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to delete '${prodToDelete.name}' from catalog? This cannot be undone.") },
+            onDismissRequest = { 
+                showDeleteConfirm = null 
+                enteredPin = ""
+                pinError = false
+            },
+            title = { Text("Verify PIN to Delete Product", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Are you sure you want to delete '${prodToDelete.name}' from catalog? This cannot be undone.")
+                    
+                    OutlinedTextField(
+                        value = enteredPin,
+                        onValueChange = {
+                            if (it.length <= 4 && it.all { char -> char.isDigit() }) {
+                                enteredPin = it
+                                pinError = false
+                            }
+                        },
+                        label = { Text("Enter Login PIN") },
+                        isError = pinError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (pinError) {
+                        Text(
+                            text = "Incorrect PIN. Please try again.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteProductFromInventory(prodToDelete)
-                        showDeleteConfirm = null
+                        val currentPin = loggedInUser?.pin
+                        val isValid = if (currentPin != null) {
+                            enteredPin == currentPin
+                        } else {
+                            viewModel.usersList.any { it.pin == enteredPin && it.isEnabled }
+                        }
+                        
+                        if (isValid) {
+                            viewModel.deleteProductFromInventory(prodToDelete)
+                            showDeleteConfirm = null
+                            enteredPin = ""
+                            pinError = false
+                        } else {
+                            pinError = true
+                        }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    enabled = enteredPin.length == 4
                 ) {
                     Text("Delete")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = null }) {
+                TextButton(onClick = { 
+                    showDeleteConfirm = null 
+                    enteredPin = ""
+                    pinError = false
+                }) {
                     Text("Cancel")
                 }
             }
@@ -979,6 +1037,7 @@ fun ProductFormDialog(
 ) {
     var name by remember { mutableStateOf(product?.name ?: "") }
     var barcode by remember { mutableStateOf(product?.barcode ?: "") }
+    var showCameraScanner by remember { mutableStateOf(false) }
     var category by remember { mutableStateOf(product?.category ?: "Pens & Pencils") }
     var costPrice by remember { mutableStateOf(product?.costPrice?.toString() ?: "") }
     var sellingPrice by remember { mutableStateOf(product?.sellingPrice?.toString() ?: "") }
@@ -1033,14 +1092,157 @@ fun ProductFormDialog(
                 }
 
                 item {
-                    OutlinedTextField(
-                        value = barcode,
-                        onValueChange = { barcode = it },
-                        label = { Text("Barcode Number") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = barcode,
+                            onValueChange = { barcode = it },
+                            label = { Text("Barcode Number") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                            trailingIcon = {
+                                IconButton(onClick = { showCameraScanner = !showCameraScanner }) {
+                                    Icon(
+                                        imageVector = if (showCameraScanner) Icons.Default.Close else Icons.Default.QrCodeScanner,
+                                        contentDescription = "Scan with Camera",
+                                        tint = if (showCameraScanner) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Quick Generate Barcode / QR Number Options
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Generate:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            AssistChip(
+                                onClick = {
+                                    // Generate a standard regional EAN-13-like numeric barcode (13-digit)
+                                    val randomBarcode = (8901000000000L + (100000000..999999999).random()).toString()
+                                    barcode = randomBarcode
+                                },
+                                label = { Text("1D Barcode", fontSize = 11.sp) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCode,
+                                        contentDescription = "Generate 1D Barcode",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = MaterialTheme.colorScheme.primary,
+                                    leadingIconContentColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+
+                            AssistChip(
+                                onClick = {
+                                    // Generate a clean alphanumeric SKU for QR code format
+                                    val prefix = if (name.isNotBlank()) {
+                                        val formattedName = name.replace(Regex("[^a-zA-Z]"), "").uppercase()
+                                        if (formattedName.length >= 3) formattedName.take(3) else "STN"
+                                    } else {
+                                        "STN"
+                                    }
+                                    val randomSuffix = (1000..9999).random()
+                                    barcode = "$prefix-$randomSuffix"
+                                },
+                                label = { Text("QR Code SKU", fontSize = 11.sp) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCodeScanner,
+                                        contentDescription = "Generate QR SKU",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = MaterialTheme.colorScheme.secondary,
+                                    leadingIconContentColor = MaterialTheme.colorScheme.secondary
+                                )
+                            )
+                        }
+
+                        AnimatedVisibility(visible = showCameraScanner) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Scan product barcode or QR code with camera",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                                ) {
+                                    CameraScannerView(onBarcodeDetected = { scanned ->
+                                        barcode = scanned
+                                        showCameraScanner = false
+                                    })
+                                }
+                                
+                                // Quick Scan Simulator for devices without real camera / emulator
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Emulator? Simulate Scan:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Button(
+                                            onClick = {
+                                                val randomBarcode = (8901000000000L + (100000000..999999999).random()).toString()
+                                                barcode = randomBarcode
+                                                showCameraScanner = false
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Text("Random Barcode", fontSize = 10.sp)
+                                        }
+                                        Button(
+                                            onClick = {
+                                                val stationeryItems = listOf("PEN-BLUE-01", "PENCIL-HB-02", "NOTEBOOK-A5", "GLUE-STICK", "ART-BRUSH-05")
+                                                barcode = stationeryItems.random()
+                                                showCameraScanner = false
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
+                                            modifier = Modifier.height(32.dp)
+                                        ) {
+                                            Text("SKU Alphanumeric", fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Category select or text entry

@@ -8,6 +8,9 @@ interface ProductDao {
     @Query("SELECT * FROM products ORDER BY name ASC")
     fun getAllProducts(): Flow<List<Product>>
 
+    @Query("SELECT * FROM products ORDER BY name ASC")
+    suspend fun getAllProductsList(): List<Product>
+
     @Query("SELECT * FROM products WHERE barcode = :barcode LIMIT 1")
     suspend fun getProductByBarcode(barcode: String): Product?
 
@@ -47,8 +50,14 @@ interface SaleDao {
     @Query("SELECT * FROM sales ORDER BY timestamp DESC")
     fun getAllSales(): Flow<List<Sale>>
 
+    @Query("SELECT * FROM sales ORDER BY timestamp DESC")
+    suspend fun getAllSalesList(): List<Sale>
+
     @Query("SELECT * FROM sale_items ORDER BY id DESC")
     fun getAllSaleItems(): Flow<List<SaleItem>>
+
+    @Query("SELECT * FROM sale_items ORDER BY id DESC")
+    suspend fun getAllSaleItemsList(): List<SaleItem>
 
     @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
     suspend fun getSaleItemsForSale(saleId: Int): List<SaleItem>

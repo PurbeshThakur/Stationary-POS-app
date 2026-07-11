@@ -49,6 +49,7 @@ fun SuperAdminScreen(
 
     var showAddDialog by remember { mutableStateOf(false) }
     var userToEdit by remember { mutableStateOf<User?>(null) }
+    var userToDelete by remember { mutableStateOf<User?>(null) }
     var showClearLogsConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -88,6 +89,11 @@ fun SuperAdminScreen(
                     }
                 },
                 actions = {
+                    com.example.util.LanguageToggle(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+
                     if (selectedTab == 0) {
                         Button(
                             onClick = { showAddDialog = true },
@@ -207,8 +213,86 @@ fun SuperAdminScreen(
                 userToEdit = null
             },
             onDelete = { username ->
-                viewModel.deleteUser(username)
+                userToDelete = userToEdit
                 userToEdit = null
+            }
+        )
+    }
+
+    // PIN Verification for user deletion
+    if (userToDelete != null) {
+        val uToDelete = userToDelete!!
+        var enteredPin by remember { mutableStateOf("") }
+        var pinError by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { 
+                userToDelete = null 
+                enteredPin = ""
+                pinError = false
+            },
+            title = { Text("Verify PIN to Delete Profile", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Are you sure you want to delete the profile of '${uToDelete.fullName}' (@${uToDelete.username})? This cannot be undone.")
+                    
+                    OutlinedTextField(
+                        value = enteredPin,
+                        onValueChange = {
+                            if (it.length <= 4 && it.all { char -> char.isDigit() }) {
+                                enteredPin = it
+                                pinError = false
+                            }
+                        },
+                        label = { Text("Enter Login PIN") },
+                        isError = pinError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (pinError) {
+                        Text(
+                            text = "Incorrect PIN. Please try again.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val currentPin = loggedInUser?.pin
+                        val isValid = if (currentPin != null) {
+                            enteredPin == currentPin
+                        } else {
+                            viewModel.usersList.any { it.pin == enteredPin && it.isEnabled }
+                        }
+                        
+                        if (isValid) {
+                            viewModel.deleteUser(uToDelete.username)
+                            userToDelete = null
+                            enteredPin = ""
+                            pinError = false
+                        } else {
+                            pinError = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    enabled = enteredPin.length == 4
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    userToDelete = null 
+                    enteredPin = ""
+                    pinError = false
+                }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -1032,12 +1116,14 @@ fun ShopConfigTabContent(
     viewModel: InventoryViewModel
 ) {
     val shopName by viewModel.shopName.collectAsState()
+    val panNumber by viewModel.panNumber.collectAsState()
     val receiptHeader by viewModel.receiptHeaderNote.collectAsState()
     val receiptFooter by viewModel.receiptFooterNote.collectAsState()
     val showBarcode by viewModel.receiptShowBarcode.collectAsState()
     val showDiscount by viewModel.receiptShowDiscountBreakdown.collectAsState()
 
     var currentNameInput by remember(shopName) { mutableStateOf(shopName) }
+    var currentPanInput by remember(panNumber) { mutableStateOf(panNumber) }
     var currentHeaderInput by remember(receiptHeader) { mutableStateOf(receiptHeader) }
     var currentFooterInput by remember(receiptFooter) { mutableStateOf(receiptFooter) }
     var currentShowBarcode by remember(showBarcode) { mutableStateOf(showBarcode) }
@@ -1113,6 +1199,26 @@ fun ShopConfigTabContent(
                         placeholder = { Text("e.g. Purbesh Stationery") },
                         leadingIcon = {
                             Icon(Icons.Default.Edit, contentDescription = null)
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = currentPanInput,
+                        onValueChange = {
+                            currentPanInput = it
+                            saveSuccess = false
+                        },
+                        label = { Text("PAN Number (Optional)") },
+                        placeholder = { Text("e.g. 987654321") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Badge, contentDescription = null)
                         },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -1237,6 +1343,7 @@ fun ShopConfigTabContent(
                     }
 
                     val isConfigChanged = currentNameInput.trim() != shopName ||
+                            currentPanInput.trim() != panNumber ||
                             currentHeaderInput.trim() != receiptHeader ||
                             currentFooterInput.trim() != receiptFooter ||
                             currentShowBarcode != showBarcode ||
@@ -1247,6 +1354,10 @@ fun ShopConfigTabContent(
                             var changed = false
                             if (currentNameInput.isNotBlank() && currentNameInput.trim() != shopName) {
                                 viewModel.updateShopName(currentNameInput.trim())
+                                changed = true
+                            }
+                            if (currentPanInput.trim() != panNumber) {
+                                viewModel.updatePanNumber(currentPanInput.trim())
                                 changed = true
                             }
                             if (currentHeaderInput.trim() != receiptHeader ||
@@ -1289,6 +1400,7 @@ fun CustomersTabContent(
     val customers by viewModel.customersListState.collectAsState()
     var showAddCustomerDialog by remember { mutableStateOf(false) }
     var showAdjustDialog by remember { mutableStateOf<com.example.ui.Customer?>(null) }
+    var customerToDelete by remember { mutableStateOf<com.example.ui.Customer?>(null) }
     var adjustAmount by remember { mutableStateOf("") }
     var adjustType by remember { mutableStateOf("Payment") }
 
@@ -1370,6 +1482,10 @@ fun CustomersTabContent(
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text("Phone: ${customer.phone}", fontSize = 12.sp, color = Color.Gray)
+                            if (!customer.address.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Address: ${customer.address}", fontSize = 12.sp, color = Color.Gray)
+                            }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1387,7 +1503,7 @@ fun CustomersTabContent(
                                 }) {
                                     Icon(Icons.Default.EditAttributes, contentDescription = "Adjust", tint = MaterialTheme.colorScheme.primary)
                                 }
-                                IconButton(onClick = { viewModel.deleteCustomer(customer.id) }) {
+                                IconButton(onClick = { customerToDelete = customer }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.LightGray)
                                 }
                             }
@@ -1401,7 +1517,7 @@ fun CustomersTabContent(
     if (showAddCustomerDialog) {
         var custName by remember { mutableStateOf("") }
         var custPhone by remember { mutableStateOf("") }
-        var initialBal by remember { mutableStateOf("") }
+        var custAddress by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddCustomerDialog = false },
@@ -1424,10 +1540,9 @@ fun CustomersTabContent(
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = initialBal,
-                        onValueChange = { initialBal = it },
-                        label = { Text("Initial Debt/Credit Balance (NPR)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        value = custAddress,
+                        onValueChange = { custAddress = it },
+                        label = { Text("Address") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1437,13 +1552,13 @@ fun CustomersTabContent(
                 Button(
                     onClick = {
                         if (custName.isNotBlank() && custPhone.isNotBlank()) {
-                            val bal = initialBal.toDoubleOrNull() ?: 0.0
                             viewModel.addOrUpdateCustomer(
                                 com.example.ui.Customer(
                                     id = UUID.randomUUID().toString(),
                                     name = custName.trim(),
                                     phone = custPhone.trim(),
-                                    storeCredit = bal
+                                    storeCredit = 0.0,
+                                    address = custAddress.trim()
                                 )
                             )
                             showAddCustomerDialog = false
@@ -1513,6 +1628,84 @@ fun CustomersTabContent(
             },
             dismissButton = {
                 TextButton(onClick = { showAdjustDialog = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (customerToDelete != null) {
+        val cust = customerToDelete!!
+        var enteredPin by remember { mutableStateOf("") }
+        var pinError by remember { mutableStateOf(false) }
+        val loggedInUser by viewModel.loggedInUser.collectAsState()
+
+        AlertDialog(
+            onDismissRequest = { 
+                customerToDelete = null 
+                enteredPin = ""
+                pinError = false
+            },
+            title = { Text("Verify PIN to Delete Account", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Are you sure you want to delete the store credit account of '${cust.name}'? This cannot be undone.")
+                    
+                    OutlinedTextField(
+                        value = enteredPin,
+                        onValueChange = {
+                            if (it.length <= 4 && it.all { char -> char.isDigit() }) {
+                                enteredPin = it
+                                pinError = false
+                            }
+                        },
+                        label = { Text("Enter Login PIN") },
+                        isError = pinError,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (pinError) {
+                        Text(
+                            text = "Incorrect PIN. Please try again.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val currentPin = loggedInUser?.pin
+                        val isValid = if (currentPin != null) {
+                            enteredPin == currentPin
+                        } else {
+                            viewModel.usersList.any { it.pin == enteredPin && it.isEnabled }
+                        }
+                        
+                        if (isValid) {
+                            viewModel.deleteCustomer(cust.id)
+                            customerToDelete = null
+                            enteredPin = ""
+                            pinError = false
+                        } else {
+                            pinError = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    enabled = enteredPin.length == 4
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    customerToDelete = null 
+                    enteredPin = ""
+                    pinError = false
+                }) {
                     Text("Cancel")
                 }
             }
