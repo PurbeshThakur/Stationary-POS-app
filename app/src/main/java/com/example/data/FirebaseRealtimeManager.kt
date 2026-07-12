@@ -750,4 +750,11 @@ class FirebaseRealtimeManager(
         val costPrice = (map["costPrice"] as? Number)?.toDouble() ?: 0.0
         return SaleItem(id, saleId, productId, productName, barcode, quantity, sellingPrice, costPrice)
     }
+
+    fun getDatabaseInstance(): FirebaseDatabase? {
+        if (database == null) {
+            initFirebase()
+        }
+        return database
+    }
 }

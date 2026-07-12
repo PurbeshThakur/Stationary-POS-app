@@ -60,6 +60,37 @@ sealed class NavigationItem(val route: String, val title: String, val icon: Imag
 fun MainAppLayout() {
     val viewModel: InventoryViewModel = viewModel()
     val loggedInUser by viewModel.loggedInUser.collectAsState()
+    val appUpdateRequired by viewModel.appUpdateRequired.collectAsState()
+    val appLanguage by viewModel.appLanguage.collectAsState()
+
+    if (appUpdateRequired != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdateDialog() },
+            title = {
+                Text(
+                    text = if (appLanguage == "ne") "नयाँ संस्करण उपलब्ध छ" else "Update Available",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Text(
+                    text = if (appLanguage == "ne") {
+                        "एपको नयाँ संस्करण (${appUpdateRequired}) उपलब्ध छ। कृपया राम्रो अनुभवको लागि एप अपडेट गर्नुहोस्।"
+                    } else {
+                        "A new version of the app (${appUpdateRequired}) is available. Please update the app for the best experience."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.dismissUpdateDialog() }
+                ) {
+                    Text(text = if (appLanguage == "ne") "ठीक छ" else "OK")
+                }
+            }
+        )
+    }
 
     if (loggedInUser == null) {
         LoginScreen(

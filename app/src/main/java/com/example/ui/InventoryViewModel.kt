@@ -2,10 +2,14 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Context
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +58,11 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     val cloudVaultId: StateFlow<String> = _cloudVaultId.asStateFlow()
 
     val firebaseRealtimeManager = com.example.data.FirebaseRealtimeManager(application, sharedPrefs)
+
+    private var textToSpeech: TextToSpeech? = null
+
+    private val _appUpdateRequired = MutableStateFlow<String?>(null)
+    val appUpdateRequired: StateFlow<String?> = _appUpdateRequired.asStateFlow()
 
     fun startFirebaseSync() {
         if (firebaseRealtimeManager.isSyncEnabled() && _cloudVaultId.value.isNotBlank()) {
@@ -188,6 +197,16 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     init {
+        try {
+            textToSpeech = TextToSpeech(application) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    textToSpeech?.language = Locale("ne", "NP")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("InventoryViewModel", "Error initializing TextToSpeech", e)
+        }
+
         loadUsersAndLogs()
         populateDbIfEmpty()
         
@@ -199,6 +218,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         
         startRealtimeSyncLoop()
         startFirebaseSync()
+        checkAppVersion()
     }
 
     private fun populateDbIfEmpty() {
@@ -836,6 +856,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 _checkoutReceipt.value = receipt
                 _cart.value = emptyMap() // clear cart on success
 
+                // Announce total price in Nepali
+                announceTotalInNepali(actualTotalAmount)
+
                 // Trigger automatic SMS receipt
                 if (customerPhone.isNotBlank()) {
                     val smsText = "Thank you for shopping at ${_shopName.value}! Invoice #${1000 + sale.id} generated. Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", safeDiscount)}). Mode: $paymentMode."
@@ -1176,4 +1199,100 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         return sb.toString()
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            textToSpeech?.stop()
+            textToSpeech?.shutdown()
+        } catch (e: Exception) {
+            Log.e("InventoryViewModel", "Error shutting down TextToSpeech", e)
+        }
+    }
+
+    fun announceTotalInNepali(amount: Double) {
+        val rupees = amount.toInt()
+        val paise = ((amount - rupees) * 100).toInt()
+        val speechText = if (paise > 0) {
+            "कुल जम्मा ${convertToNepaliDigits(rupees.toString())} रुपैयाँ र ${convertToNepaliDigits(paise.toString())} पैसा भयो।"
+        } else {
+            "कुल जम्मा ${convertToNepaliDigits(rupees.toString())} रुपैयाँ भयो।"
+        }
+        
+        textToSpeech?.let { tts ->
+            try {
+                tts.speak(speechText, TextToSpeech.QUEUE_FLUSH, null, "POS_TOTAL")
+            } catch (e: Exception) {
+                Log.e("TTS", "Failed to speak total amount", e)
+            }
+        }
+    }
+
+    private fun convertToNepaliDigits(input: String): String {
+        val nepaliDigits = mapOf(
+            '0' to '०', '1' to '१', '2' to '२', '3' to '३', '4' to '४',
+            '5' to '५', '6' to '६', '7' to '७', '8' to '८', '9' to '९'
+        )
+        return input.map { nepaliDigits[it] ?: it }.joinToString("")
+    }
+
+    fun dismissUpdateDialog() {
+        _appUpdateRequired.value = null
+    }
+
+    fun checkAppVersion() {
+        viewModelScope.launch {
+            try {
+                val db = firebaseRealtimeManager.getDatabaseInstance() ?: return@launch
+                val ref = db.getReference("current_version")
+                ref.addListenerForSingleValueEvent(object : ValueEventListener {
+                    override fun onDataChange(snapshot: DataSnapshot) {
+                        val rawValue = snapshot.value
+                        val remoteVersion = when (rawValue) {
+                            is String -> rawValue.trim()
+                            is Number -> rawValue.toString()
+                            null -> null
+                            else -> rawValue.toString().trim()
+                        }
+                        if (remoteVersion != null) {
+                            val currentVersion = try {
+                                val packageInfo = getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0)
+                                packageInfo.versionName ?: "1.0.0"
+                            } catch (e: Exception) {
+                                "1.0.0"
+                            }
+                            Log.d("InventoryViewModel", "Version Check: App version = $currentVersion, Firebase version = $remoteVersion")
+                            if (isUpdateRequired(currentVersion, remoteVersion)) {
+                                _appUpdateRequired.value = remoteVersion
+                            }
+                        }
+                    }
+
+                    override fun onCancelled(error: DatabaseError) {
+                        Log.e("FirebaseVersionCheck", "Version check cancelled: ${error.message}")
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e("FirebaseVersionCheck", "Error checking version", e)
+            }
+        }
+    }
+
+    private fun isUpdateRequired(current: String, remote: String): Boolean {
+        val currentClean = current.trim().removePrefix("v").removePrefix("V")
+        val remoteClean = remote.trim().removePrefix("v").removePrefix("V")
+        
+        if (currentClean == remoteClean) return false
+        
+        val currentParts = currentClean.split("[^0-9]".toRegex()).filter { it.isNotEmpty() }.mapNotNull { it.toIntOrNull() }
+        val remoteParts = remoteClean.split("[^0-9]".toRegex()).filter { it.isNotEmpty() }.mapNotNull { it.toIntOrNull() }
+        
+        val maxLength = maxOf(currentParts.size, remoteParts.size)
+        for (i in 0 until maxLength) {
+            val currVal = currentParts.getOrElse(i) { 0 }
+            val remoteVal = remoteParts.getOrElse(i) { 0 }
+            if (remoteVal > currVal) return true
+            if (currVal > remoteVal) return false
+        }
+        return false
+    }
 }
