@@ -55,6 +55,7 @@ data class User(
     val canViewReports: Boolean = true,
     val canPerformSale: Boolean = true,
     val canUseAiAdvisor: Boolean = true,
+    val canManageStoreCredit: Boolean = true,
     val isSuperAdmin: Boolean = false
 )
 
@@ -84,5 +85,20 @@ data class Customer(
     val phone: String,
     val storeCredit: Double = 0.0,
     val address: String = ""
+)
+
+@Entity(tableName = "product_returns")
+@com.squareup.moshi.JsonClass(generateAdapter = true)
+data class ProductReturn(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val saleId: Int? = null,
+    val productId: Int,
+    val productName: String,
+    val barcode: String,
+    val quantity: Int,
+    val refundAmount: Double,
+    val timestamp: Long,
+    val reason: String = "Defective/Change of mind",
+    val returnedBy: String = "Staff"
 )
 

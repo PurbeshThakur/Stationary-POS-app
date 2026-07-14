@@ -205,23 +205,69 @@ class FirebaseRealtimeManager(
                             saleItemsList.add(parseSaleItem(map))
                         }
 
+                        // Parse Product Returns
+                        val returnsList = mutableListOf<ProductReturn>()
+                        if (snapshot.child("product_returns").exists()) {
+                            snapshot.child("product_returns").children.forEach { child ->
+                                val map = child.value as? Map<String, Any> ?: return@forEach
+                                returnsList.add(parseProductReturn(map))
+                            }
+                        }
+
+                        // Parse Deleted Products list to prevent re-uploading deleted products
+                        val deletedBarcodes = mutableSetOf<String>()
+                        if (snapshot.child("deleted_products").exists()) {
+                            snapshot.child("deleted_products").children.forEach { child ->
+                                if (child.value == true) {
+                                    deletedBarcodes.add(child.key ?: "")
+                                }
+                            }
+                        }
+
                         // Local current values for sync reconciliation
-                        val localProducts = repository.productDao.getAllProductsList()
+                        var localProducts = repository.productDao.getAllProductsList()
                         val localSales = repository.saleDao.getAllSalesList()
                         val localSaleItems = repository.saleDao.getAllSaleItemsList()
+                        val localReturns = repository.productReturnDao.getAllReturnsList()
+
+                        // Sync deletions: If a product was deleted in the cloud, delete it locally
+                        val localProductsToDelete = localProducts.filter {
+                            val key = it.barcode.ifBlank { "prod_" + it.id }
+                            key in deletedBarcodes
+                        }
+                        if (localProductsToDelete.isNotEmpty()) {
+                            Log.d("FirebaseRealtimeManager", "Sync: Deleting ${localProductsToDelete.size} products locally that were deleted in the cloud...")
+                            localProductsToDelete.forEach { prod ->
+                                repository.deleteProduct(prod)
+                            }
+                            localProducts = localProducts.filter { it !in localProductsToDelete }
+                        }
 
                         repository.mergeAndSync(
                             localProducts = localProducts,
                             localSales = localSales,
                             localSaleItems = localSaleItems,
-                            cloudProducts = productsList,
+                            cloudProducts = productsList.filter { 
+                                val key = it.barcode.ifBlank { "prod_" + it.id }
+                                key !in deletedBarcodes 
+                            },
                             cloudSales = salesList,
                             cloudSaleItems = saleItemsList
                         )
 
-                        // Bidirectional Sync: Upload any local-only products to the cloud
-                        val cloudBarcodes = productsList.map { it.barcode }.toSet()
-                        val localOnlyProducts = localProducts.filter { it.barcode.isNotBlank() && it.barcode !in cloudBarcodes }
+                        // Reconcile and Sync Returns
+                        val localReturnKeys = localReturns.map { "${it.timestamp}_${it.productId}" }.toSet()
+                        val newCloudReturns = returnsList.filter { "${it.timestamp}_${it.productId}" !in localReturnKeys }
+                        if (newCloudReturns.isNotEmpty()) {
+                            repository.insertReturns(newCloudReturns)
+                        }
+
+                        // Bidirectional Sync: Upload any local-only products to the cloud (excluding deleted ones)
+                        val cloudBarcodes = productsList.map { it.barcode.ifBlank { "prod_" + it.id } }.toSet()
+                        val localOnlyProducts = localProducts.filter { 
+                            val key = it.barcode.ifBlank { "prod_" + it.id }
+                            it.barcode.isNotBlank() && key !in cloudBarcodes && key !in deletedBarcodes 
+                        }
                         if (localOnlyProducts.isNotEmpty()) {
                             Log.d("FirebaseRealtimeManager", "Sync: Found ${localOnlyProducts.size} local-only products. Uploading to cloud...")
                             localOnlyProducts.forEach { prod ->
@@ -240,7 +286,18 @@ class FirebaseRealtimeManager(
                             }
                         }
 
+                        // Bidirectional Sync: Upload any local-only returns to the cloud
+                        val cloudReturnKeys = returnsList.map { "${it.timestamp}_${it.productId}" }.toSet()
+                        val localOnlyReturns = localReturns.filter { "${it.timestamp}_${it.productId}" !in cloudReturnKeys }
+                        if (localOnlyReturns.isNotEmpty()) {
+                            Log.d("FirebaseRealtimeManager", "Sync: Found ${localOnlyReturns.size} local-only returns. Uploading to cloud...")
+                            localOnlyReturns.forEach { ret ->
+                                pushReturn(vaultId, ret)
+                            }
+                        }
+
                         // Parse Admin, Report, and other component metadata safely
+
                         val usersList = if (snapshot.child("users").exists()) mutableListOf<User>() else null
                         if (usersList != null) {
                             snapshot.child("users").children.forEach { child ->
@@ -278,7 +335,7 @@ class FirebaseRealtimeManager(
                         }
 
                         withContext(Dispatchers.Main) {
-                            onSyncUpdate("Synced ${productsList.size} products, ${salesList.size} sales via Firebase Realtime!")
+                            onSyncUpdate("Synced ${productsList.size} products, ${salesList.size} sales, ${returnsList.size} returns via Firebase Realtime!")
                             onMetadataSync(usersList, auditLogsList, expensesList, customersList, shopName, panNumber)
                         }
                     } catch (e: Exception) {
@@ -312,10 +369,13 @@ class FirebaseRealtimeManager(
         val db = database ?: return
         scopeIO {
             try {
-                // We index products by their unique barcode to reconcile properly
-                val path = "vaults/$vaultId/products/${product.barcode.ifBlank { "prod_" + product.id }}"
-                db.getReference(path).setValue(serializeProduct(product))
-                Log.d("FirebaseRealtimeManager", "Pushed product to Firebase: ${product.name}")
+                val barcode = product.barcode.ifBlank { "prod_" + product.id }
+                val updates = hashMapOf<String, Any?>()
+                updates["vaults/$vaultId/products/$barcode"] = serializeProduct(product)
+                updates["vaults/$vaultId/deleted_products/$barcode"] = null
+                
+                db.getReference().updateChildren(updates)
+                Log.d("FirebaseRealtimeManager", "Pushed product to Firebase atomically: ${product.name}")
             } catch (e: Exception) {
                 Log.e("FirebaseRealtimeManager", "Failed to push product", e)
             }
@@ -330,9 +390,13 @@ class FirebaseRealtimeManager(
         val db = database ?: return
         scopeIO {
             try {
-                val path = "vaults/$vaultId/products/${product.barcode.ifBlank { "prod_" + product.id }}"
-                db.getReference(path).removeValue()
-                Log.d("FirebaseRealtimeManager", "Deleted product from Firebase: ${product.name}")
+                val barcode = product.barcode.ifBlank { "prod_" + product.id }
+                val updates = hashMapOf<String, Any?>()
+                updates["vaults/$vaultId/products/$barcode"] = null
+                updates["vaults/$vaultId/deleted_products/$barcode"] = true
+                
+                db.getReference().updateChildren(updates)
+                Log.d("FirebaseRealtimeManager", "Deleted product from Firebase atomically: ${product.name}")
             } catch (e: Exception) {
                 Log.e("FirebaseRealtimeManager", "Failed to delete product", e)
             }
@@ -376,6 +440,7 @@ class FirebaseRealtimeManager(
         products: List<Product>,
         sales: List<Sale>,
         saleItems: List<SaleItem>,
+        productReturns: List<ProductReturn> = emptyList(),
         users: List<User> = emptyList(),
         auditLogs: List<AuditLog> = emptyList(),
         expenses: List<Expense> = emptyList(),
@@ -419,6 +484,17 @@ class FirebaseRealtimeManager(
                     itemsMap[key] = serializeSaleItem(it)
                 }
                 updates["vaults/$vaultId/sale_items"] = itemsMap
+
+                // Prepare Product Returns
+                if (productReturns.isNotEmpty()) {
+                    val returnsMap = hashMapOf<String, Any>()
+                    productReturns.forEach {
+                        val key = "${it.timestamp}_${it.productId}"
+                        returnsMap[key] = serializeProductReturn(it)
+                    }
+                    updates["vaults/$vaultId/product_returns"] = returnsMap
+                }
+
 
                 // Prepare Users
                 if (users.isNotEmpty()) {
@@ -579,6 +655,7 @@ class FirebaseRealtimeManager(
             "canViewReports" to u.canViewReports,
             "canPerformSale" to u.canPerformSale,
             "canUseAiAdvisor" to u.canUseAiAdvisor,
+            "canManageStoreCredit" to u.canManageStoreCredit,
             "isSuperAdmin" to u.isSuperAdmin
         )
     }
@@ -626,6 +703,7 @@ class FirebaseRealtimeManager(
         val canViewReports = map["canViewReports"] as? Boolean ?: true
         val canPerformSale = map["canPerformSale"] as? Boolean ?: true
         val canUseAiAdvisor = map["canUseAiAdvisor"] as? Boolean ?: true
+        val canManageStoreCredit = map["canManageStoreCredit"] as? Boolean ?: true
         val isSuperAdmin = map["isSuperAdmin"] as? Boolean ?: false
         return User(
             username = username,
@@ -638,6 +716,7 @@ class FirebaseRealtimeManager(
             canViewReports = canViewReports,
             canPerformSale = canPerformSale,
             canUseAiAdvisor = canUseAiAdvisor,
+            canManageStoreCredit = canManageStoreCredit,
             isSuperAdmin = isSuperAdmin
         )
     }
@@ -749,6 +828,60 @@ class FirebaseRealtimeManager(
         val sellingPrice = (map["sellingPrice"] as? Number)?.toDouble() ?: 0.0
         val costPrice = (map["costPrice"] as? Number)?.toDouble() ?: 0.0
         return SaleItem(id, saleId, productId, productName, barcode, quantity, sellingPrice, costPrice)
+    }
+
+    fun pushReturn(vaultId: String, productReturn: ProductReturn) {
+        if (!isSyncEnabled() || vaultId.isBlank()) return
+        val db = database ?: return
+        scopeIO {
+            try {
+                val returnKey = "${productReturn.timestamp}_${productReturn.productId}"
+                db.getReference("vaults/$vaultId/product_returns/$returnKey").setValue(serializeProductReturn(productReturn))
+                Log.d("FirebaseRealtimeManager", "Pushed return to Firebase: ${productReturn.productName}")
+            } catch (e: Exception) {
+                Log.e("FirebaseRealtimeManager", "Failed to push return", e)
+            }
+        }
+    }
+
+    private fun serializeProductReturn(ret: ProductReturn): Map<String, Any> {
+        return mapOf(
+            "id" to ret.id,
+            "saleId" to (ret.saleId ?: 0),
+            "productId" to ret.productId,
+            "productName" to ret.productName,
+            "barcode" to ret.barcode,
+            "quantity" to ret.quantity,
+            "refundAmount" to ret.refundAmount,
+            "timestamp" to ret.timestamp,
+            "reason" to ret.reason,
+            "returnedBy" to ret.returnedBy
+        )
+    }
+
+    private fun parseProductReturn(map: Map<String, Any>): ProductReturn {
+        val id = (map["id"] as? Number)?.toInt() ?: 0
+        val saleId = (map["saleId"] as? Number)?.toInt()
+        val productId = (map["productId"] as? Number)?.toInt() ?: 0
+        val productName = map["productName"] as? String ?: ""
+        val barcode = map["barcode"] as? String ?: ""
+        val quantity = (map["quantity"] as? Number)?.toInt() ?: 0
+        val refundAmount = (map["refundAmount"] as? Number)?.toDouble() ?: 0.0
+        val timestamp = (map["timestamp"] as? Number)?.toLong() ?: 0L
+        val reason = map["reason"] as? String ?: "Defective/Change of mind"
+        val returnedBy = map["returnedBy"] as? String ?: "Staff"
+        return ProductReturn(
+            id = id,
+            saleId = saleId,
+            productId = productId,
+            productName = productName,
+            barcode = barcode,
+            quantity = quantity,
+            refundAmount = refundAmount,
+            timestamp = timestamp,
+            reason = reason,
+            returnedBy = returnedBy
+        )
     }
 
     fun getDatabaseInstance(): FirebaseDatabase? {

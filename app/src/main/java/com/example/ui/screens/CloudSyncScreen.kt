@@ -118,13 +118,13 @@ fun CloudSyncScreen(
                         }
                         Column {
                             Text(
-                                "Cloud Vault",
+                                com.example.util.t("cloud_vault", viewModel),
                                 fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "Storage, Reports & Backups",
+                                com.example.util.t("storage_reports_backups", viewModel),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -197,16 +197,16 @@ fun CloudSyncScreen(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isConnected) "Vault Connected & Active" else "Cloud Storage Offline",
+                                text = if (isConnected) com.example.util.t("vault_connected_active", viewModel) else com.example.util.t("cloud_storage_offline", viewModel),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
                             Text(
                                 text = if (isConnected) {
-                                    "Connected to Vault: $cloudVaultId"
+                                    "${com.example.util.t("connected_to_vault", viewModel)} $cloudVaultId"
                                 } else {
-                                    "Initialize a new Vault to securely back up your database."
+                                    com.example.util.t("init_new_vault_desc", viewModel)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -228,14 +228,14 @@ fun CloudSyncScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
-                            text = "Cloud Connection Setup",
+                            text = com.example.util.t("cloud_connection_setup", viewModel),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
 
                         Text(
-                            text = "To sync stationery data or restore previous states across instances, create a new Cloud Storage Vault, or enter an existing Vault ID.",
+                            text = com.example.util.t("cloud_setup_desc", viewModel),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -243,8 +243,8 @@ fun CloudSyncScreen(
                         OutlinedTextField(
                             value = inputVaultId,
                             onValueChange = { inputVaultId = it },
-                            label = { Text("Cloud Vault ID") },
-                            placeholder = { Text("Enter 18+ digit unique vault token") },
+                            label = { Text(com.example.util.t("cloud_vault_id", viewModel)) },
+                            placeholder = { Text(com.example.util.t("enter_vault_token", viewModel)) },
                             singleLine = true,
                             leadingIcon = {
                                 Icon(Icons.Default.VpnKey, contentDescription = "Key ID", tint = MaterialTheme.colorScheme.outline)
@@ -279,7 +279,7 @@ fun CloudSyncScreen(
                             ) {
                                 Icon(Icons.Default.Link, contentDescription = "Connect")
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Connect ID")
+                                Text(com.example.util.t("connect_id", viewModel))
                             }
 
                             Button(
@@ -294,7 +294,7 @@ fun CloudSyncScreen(
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = "Create New")
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("New Vault")
+                                Text(com.example.util.t("new_vault", viewModel))
                             }
                         }
 
@@ -316,7 +316,7 @@ fun CloudSyncScreen(
                                 ) {
                                     Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Copy Vault ID")
+                                    Text(com.example.util.t("copy_vault_id", viewModel))
                                 }
 
                                  TextButton(
@@ -329,7 +329,7 @@ fun CloudSyncScreen(
                                 ) {
                                     Icon(Icons.Default.LinkOff, contentDescription = "Disconnect")
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Disconnect")
+                                    Text(com.example.util.t("disconnect", viewModel))
                                 }
                             }
                         }
@@ -350,7 +350,7 @@ fun CloudSyncScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
-                            text = "Synchronize & Backups",
+                            text = com.example.util.t("synchronize_backups", viewModel),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -373,8 +373,8 @@ fun CloudSyncScreen(
                             ) {
                                 Icon(Icons.Default.Sync, contentDescription = "Auto Sync", tint = MaterialTheme.colorScheme.primary)
                                 Column {
-                                    Text("Auto-Sync on Checkouts", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text("Syncs inventory after each successful bill", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(com.example.util.t("auto_sync_checkouts", viewModel), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text(com.example.util.t("syncs_inventory_desc", viewModel), fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                                 }
                             }
                             Switch(
@@ -403,7 +403,7 @@ fun CloudSyncScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Products Count", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(com.example.util.t("products_count", viewModel), fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                                     Text("${products.size}", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
@@ -416,7 +416,7 @@ fun CloudSyncScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("Sales Logged", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(com.example.util.t("sales_logged", viewModel), fontSize = 10.sp, color = MaterialTheme.colorScheme.outline)
                                     Text("${sales.size}", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
                                 }
                             }
@@ -444,11 +444,11 @@ fun CloudSyncScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Text("Syncing Cloud...")
+                                    Text(com.example.util.t("syncing_cloud", viewModel))
                                 } else {
                                     Icon(Icons.Default.CloudUpload, contentDescription = "Backup Now")
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Back Up Now (Save DB to Cloud)")
+                                    Text(com.example.util.t("backup_now_btn", viewModel))
                                 }
                             }
 
@@ -466,7 +466,7 @@ fun CloudSyncScreen(
                             ) {
                                 Icon(Icons.Default.CloudDownload, contentDescription = "Restore From Cloud")
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Restore Database (Download Backup)")
+                                Text(com.example.util.t("restore_db_btn", viewModel))
                             }
                         }
                     }

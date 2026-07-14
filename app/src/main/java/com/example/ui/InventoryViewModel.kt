@@ -49,7 +49,7 @@ sealed interface CloudBackupState {
 class InventoryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = AppDatabase.getDatabase(application, viewModelScope)
-    private val repository = StationeryRepository(database.productDao(), database.saleDao())
+    private val repository = StationeryRepository(database.productDao(), database.saleDao(), database.productReturnDao())
     private val geminiService = GeminiService()
     private val cloudService = CloudBackupService()
     private val sharedPrefs = application.getSharedPreferences("stationery_backup_prefs", Context.MODE_PRIVATE)
@@ -120,11 +120,13 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             val products = repository.productDao.getAllProductsList()
             val sales = repository.saleDao.getAllSalesList()
             val saleItems = repository.saleDao.getAllSaleItemsList()
+            val productReturns = repository.productReturnDao.getAllReturnsList()
             firebaseRealtimeManager.pushAllData(
                 vaultId = _cloudVaultId.value,
                 products = products,
                 sales = sales,
                 saleItems = saleItems,
+                productReturns = productReturns,
                 users = _usersListState.value,
                 auditLogs = _auditLogs.value,
                 expenses = _expensesListState.value,
@@ -157,10 +159,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     private val defaultUsers = listOf(
-        User("admin", UserRole.ADMIN, "1234", "System Administrator", 0xFF6200EE, isSuperAdmin = true),
-        User("purbesh", UserRole.ADMIN, "1111", "Purbesh (Admin)", 0xFF00C853, isSuperAdmin = true),
-        User("staff", UserRole.CASHIER, "0000", "Stationery Cashier", 0xFFFFAB00, canViewReports = false, canManageInventory = false, canUseAiAdvisor = false),
-        User("anjali", UserRole.CASHIER, "2222", "Anjali (Staff)", 0xFF00B0FF, canViewReports = false, canManageInventory = false, canUseAiAdvisor = false)
+        User("purbesh", UserRole.ADMIN, "1111", "Purbesh", 0xFF00C853, isSuperAdmin = true),
+        User("anita", UserRole.CASHIER, "2222", "Anita", 0xFF9C27B0, canViewReports = false, canManageInventory = false, canUseAiAdvisor = false, canManageStoreCredit = false),
+        User("d", UserRole.CASHIER, "0000", "D", 0xFFFF9800, canViewReports = false, canManageInventory = false, canUseAiAdvisor = false, canManageStoreCredit = false)
     )
 
     private val _usersListState = MutableStateFlow<List<User>>(emptyList())
@@ -194,13 +195,49 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     fun setAppLanguage(lang: String) {
         _appLanguage.value = lang
         sharedPrefs.edit().putString("app_language", lang).apply()
+        textToSpeech?.let { tts ->
+            try {
+                tts.language = java.util.Locale("ne", "NP")
+                val speechText = if (lang == "ne") {
+                    "नेपाली भाषा चयन गरियो"
+                } else {
+                    "अंग्रेजी भाषा चयन गरियो"
+                }
+                val params = android.os.Bundle().apply {
+                    putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                }
+                tts.speak(speechText, android.speech.tts.TextToSpeech.QUEUE_FLUSH, params, "LANG_TOGGLE")
+            } catch (e: Exception) {
+                android.util.Log.e("TTS", "Failed to announce language toggle", e)
+            }
+        }
     }
 
     init {
         try {
             textToSpeech = TextToSpeech(application) { status ->
                 if (status == TextToSpeech.SUCCESS) {
-                    textToSpeech?.language = Locale("ne", "NP")
+                    textToSpeech?.let { tts ->
+                        tts.language = Locale("ne", "NP")
+                        tts.setSpeechRate(0.85f)
+                        tts.setPitch(1.0f)
+                        try {
+                            val voices = tts.voices
+                            if (!voices.isNullOrEmpty()) {
+                                val nepaliVoice = voices.find { voice ->
+                                    voice.locale.language == "ne" && !voice.isNetworkConnectionRequired
+                                } ?: voices.find { voice ->
+                                    voice.locale.language == "ne"
+                                }
+                                if (nepaliVoice != null) {
+                                    tts.voice = nepaliVoice
+                                    Log.d("TTS", "Selected high-quality Nepali voice: ${nepaliVoice.name}")
+                                }
+                            }
+                        } catch (ex: Exception) {
+                            Log.e("TTS", "Error setting custom voice", ex)
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -314,10 +351,11 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         if (usersJson != null) {
             try {
                 val list = userListAdapter.fromJson(usersJson)
-                if (list != null) {
+                if (list != null && list.any { it.username == "anita" }) {
                     _usersListState.value = list
                 } else {
                     _usersListState.value = defaultUsers
+                    saveUsersList(defaultUsers)
                 }
             } catch (e: Exception) {
                 Log.e("InventoryViewModel", "Error parsing users JSON", e)
@@ -488,6 +526,17 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     fun logout() {
         logAction("Logged Out", "Success")
         _loggedInUser.value = null
+        _currentUserRole.value = UserRole.CASHIER
+    }
+
+    fun restoreBaseUserRole() {
+        val loggedIn = _loggedInUser.value ?: return
+        val baseUser = _usersListState.value.find { it.username.equals(loggedIn.username, ignoreCase = true) }
+        if (baseUser != null) {
+            _loggedInUser.value = baseUser
+            _currentUserRole.value = baseUser.role
+            logAction("De-elevated", "Restored role to ${baseUser.role.label}")
+        }
     }
 
     fun setUserRole(role: UserRole) {
@@ -684,6 +733,82 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     val allSaleItems: StateFlow<List<SaleItem>> = repository.allSaleItems
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allReturns: StateFlow<List<ProductReturn>> = repository.allReturns
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun logProductReturn(
+        productId: Int,
+        productName: String,
+        barcode: String,
+        quantity: Int,
+        refundAmount: Double,
+        reason: String,
+        saleId: Int? = null,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val productReturn = ProductReturn(
+                    saleId = saleId,
+                    productId = productId,
+                    productName = productName,
+                    barcode = barcode,
+                    quantity = quantity,
+                    refundAmount = refundAmount,
+                    timestamp = System.currentTimeMillis(),
+                    reason = reason,
+                    returnedBy = _loggedInUser.value?.fullName ?: "Staff"
+                )
+                repository.insertReturn(productReturn)
+
+                // Push return immediately to Firebase if sync is active
+                if (firebaseRealtimeManager.isSyncEnabled() && _cloudVaultId.value.isNotBlank()) {
+                    firebaseRealtimeManager.pushReturn(_cloudVaultId.value, productReturn)
+
+                    // Also push the updated product so other devices get the stock change instantly
+                    repository.productDao.getProductById(productId)?.let { updatedProd ->
+                        firebaseRealtimeManager.pushProduct(_cloudVaultId.value, updatedProd)
+                    }
+                }
+
+                triggerAutoCloudSync()
+                
+                withContext(Dispatchers.Main) {
+                    onComplete(true)
+                }
+            } catch (e: Exception) {
+                Log.e("InventoryViewModel", "Failed to log return", e)
+                withContext(Dispatchers.Main) {
+                    onComplete(false)
+                }
+            }
+        }
+    }
+
+    fun getBillNumberForSale(sale: Sale): Int {
+        val list = allSales.value
+        val sorted = list.sortedBy { it.timestamp }
+        val idx = sorted.indexOfFirst { it.timestamp == sale.timestamp }
+        return if (idx >= 0) {
+            1001 + idx
+        } else {
+            val countOlder = list.count { it.timestamp < sale.timestamp }
+            1001 + countOlder
+        }
+    }
+
+    fun getBillNumberForSaleId(saleId: Int): Int {
+        val list = allSales.value
+        val sorted = list.sortedBy { it.timestamp }
+        val idx = sorted.indexOfFirst { it.id == saleId }
+        return if (idx >= 0) {
+            1001 + idx
+        } else {
+            1000 + saleId
+        }
+    }
+
+
     // Low stock items threshold alert
     val lowStockProducts: StateFlow<List<Product>> = allProducts
         .map { products ->
@@ -742,7 +867,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * Scan a barcode and add it directly to cart if found
+     * Scan a barcode or search product name and add it directly to cart if found
      */
     fun scanBarcode(barcode: String, onResult: (Boolean, String) -> Unit) {
         val cleanedBarcode = barcode.trim().removeSurrounding("*").trim()
@@ -773,6 +898,19 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 product = repository.getProductByBarcode(barcode)
             }
 
+            // 5. Try matching by Product Name
+            if (product == null) {
+                val allProds = allProducts.value
+                val query = barcode.trim().lowercase()
+                // Try exact match on product name first (case insensitive)
+                product = allProds.find { it.name.trim().lowercase() == query }
+                
+                // If not found, try case-insensitive substring match on name
+                if (product == null) {
+                    product = allProds.find { it.name.trim().lowercase().contains(query) }
+                }
+            }
+
             if (product != null) {
                 if (product.stockQuantity > 0) {
                     addToCart(product, 1)
@@ -781,7 +919,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                     onResult(false, "${product.name} is out of stock")
                 }
             } else {
-                onResult(false, "No stationery item found with barcode: $barcode")
+                onResult(false, "No stationery item found with barcode or name: $barcode")
             }
         }
     }
@@ -821,6 +959,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             val safeDiscount = discountAmount.coerceAtMost(maxDiscount)
 
             val actualTotalAmount = (totalAmount - safeDiscount).coerceAtLeast(0.0)
+            if (actualTotalAmount < 1.0) {
+                return@launch
+            }
             val actualTotalProfit = totalProfit - safeDiscount
 
             val activeUser = _loggedInUser.value?.fullName ?: "Cashier/Staff"
@@ -861,7 +1002,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
                 // Trigger automatic SMS receipt
                 if (customerPhone.isNotBlank()) {
-                    val smsText = "Thank you for shopping at ${_shopName.value}! Invoice #${1000 + sale.id} generated. Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", safeDiscount)}). Mode: $paymentMode."
+                    val smsText = "Thank you for shopping at ${_shopName.value}! Invoice #${getBillNumberForSale(sale)} generated. Total: NPR ${String.format("%.2f", actualTotalAmount)} (Discount: NPR ${String.format("%.2f", safeDiscount)}). Mode: $paymentMode."
                     sendSms(customerPhone, smsText, "Sale Receipt")
                 }
 
@@ -898,6 +1039,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         sb.append("    ${_receiptHeaderNote.value}    \n")
         sb.append("===============================\n")
         sb.append("Date: $dateStr\n")
+        sb.append("Invoice: #${getBillNumberForSale(sale)}\n")
         if (phone.isNotBlank()) {
             sb.append("Customer Mob: $phone\n")
         }
@@ -910,6 +1052,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             val lineTotal = item.sellingPrice * item.quantity
             subTotal += lineTotal
             sb.append(String.format("%-18s %3d %8.2f\n", nameTrunc, item.quantity, lineTotal))
+            if (item.barcode.isNotBlank()) {
+                sb.append(" [BC: ${item.barcode}]\n")
+            }
         }
         sb.append("-------------------------------\n")
         if (discountAmount > 0.0 && _receiptShowDiscountBreakdown.value) {
@@ -1072,6 +1217,14 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                         _customersListState.value = it
                         saveCustomers(it)
                     }
+                    payload.productReturns?.let { cloudReturns ->
+                        val localReturns = allReturns.value
+                        val localReturnKeys = localReturns.map { "${it.timestamp}_${it.productId}" }.toSet()
+                        val newCloudReturns = cloudReturns.filter { "${it.timestamp}_${it.productId}" !in localReturnKeys }
+                        if (newCloudReturns.isNotEmpty()) {
+                            repository.insertReturns(newCloudReturns)
+                        }
+                    }
                     
                     sharedPrefs.edit().putLong("last_sync_timestamp", payload.backupTimestamp).apply()
                     Log.d("InventoryViewModel", "Real-time sync: Database merged with cloud vault $vaultId")
@@ -1106,6 +1259,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 products = products,
                 sales = sales,
                 saleItems = saleItems,
+                productReturns = allReturns.value,
                 formattedReport = customReport ?: buildBackupReportString(sales, saleItems),
                 backupTimestamp = timestampToSave,
                 storeName = _shopName.value,
@@ -1155,7 +1309,8 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                     repository.restoreDatabase(
                         products = payload.products,
                         sales = payload.sales,
-                        saleItems = payload.saleItems
+                        saleItems = payload.saleItems,
+                        returns = payload.productReturns ?: emptyList()
                     )
                     payload.users?.let {
                         _usersListState.value = it
@@ -1210,29 +1365,92 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun announceTotalInNepali(amount: Double) {
-        val rupees = amount.toInt()
-        val paise = ((amount - rupees) * 100).toInt()
-        val speechText = if (paise > 0) {
-            "कुल जम्मा ${convertToNepaliDigits(rupees.toString())} रुपैयाँ र ${convertToNepaliDigits(paise.toString())} पैसा भयो।"
-        } else {
-            "कुल जम्मा ${convertToNepaliDigits(rupees.toString())} रुपैयाँ भयो।"
-        }
+        val absoluteAmount = Math.abs(amount)
+        val rupees = absoluteAmount.toLong()
+        val paise = Math.round((absoluteAmount - rupees) * 100)
         
         textToSpeech?.let { tts ->
             try {
-                tts.speak(speechText, TextToSpeech.QUEUE_FLUSH, null, "POS_TOTAL")
+                val params = android.os.Bundle().apply {
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                }
+                
+                tts.language = Locale("ne", "NP")
+                
+                val speechText = when {
+                    rupees > 0 && paise > 0 -> {
+                        "कुल जम्मा ${convertNumberToNepaliWords(rupees)} रुपैयाँ र ${convertNumberToNepaliWords(paise)} पैसा भयो।"
+                    }
+                    rupees > 0 -> {
+                        "कुल जम्मा ${convertNumberToNepaliWords(rupees)} रुपैयाँ भयो।"
+                    }
+                    paise > 0 -> {
+                        "कुल जम्मा ${convertNumberToNepaliWords(paise)} पैसा भयो।"
+                    }
+                    else -> {
+                        "कुल जम्मा शून्य रुपैयाँ भयो।"
+                    }
+                }
+                tts.speak(speechText, TextToSpeech.QUEUE_FLUSH, params, "POS_TOTAL")
             } catch (e: Exception) {
-                Log.e("TTS", "Failed to speak total amount", e)
+                Log.e("TTS", "Failed to speak total amount in Nepali", e)
             }
         }
     }
 
-    private fun convertToNepaliDigits(input: String): String {
-        val nepaliDigits = mapOf(
-            '0' to '०', '1' to '१', '2' to '२', '3' to '३', '4' to '४',
-            '5' to '५', '6' to '६', '7' to '७', '8' to '८', '9' to '९'
-        )
-        return input.map { nepaliDigits[it] ?: it }.joinToString("")
+    private val nepaliNumbers1to100 = arrayOf(
+        "", "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "आठ", "नौ", "दस",
+        "एघार", "बाह्र", "तेह्र", "चौध", "पन्ध्र", "सोह्र", "सत्र", "अठार", "उन्नाइस", "बीस",
+        "एक्काइस", "बाइस", "तेइस", "चौबिस", "पच्चिस", "छब्बिस", "सत्ताइस", "अठ्याइस", "उन्तीस", "तीस",
+        "एकतीस", "बत्तीस", "तेतीस", "चौतीस", "पैंतीस", "छत्तीस", "सैंतीस", "अड्तीस", "उनन्चालीस", "चालीस",
+        "एकचालीस", "बयालीस", "त्रिचालीस", "चौबालीस", "पैंतालीस", "छयालीस", "सतचालीस", "अठचालीस", "उनन्चास", "पचास",
+        "एकाउन्न", "बाउन्न", "त्रिपन्न", "चौपन्न", "पचपन्न", "छपन्न", "सन्ताउन्न", "अन्ठाउन्न", "उनन्साठी", "साठी",
+        "एकसट्ठी", "बायसट्ठी", "त्रियसट्ठी", "चौसट्ठी", "पैंसट्ठी", "छयसट्ठी", "सतसट्ठी", "अठसट्ठी", "उनन्सत्तरी", "सत्तरी",
+        "एकहत्तर", "बाहत्तर", "त्रिहत्तर", "चौहत्तर", "पचहत्तर", "छहत्तर", "सतहत्तर", "अठहत्तर", "उनन्असी", "असी",
+        "एकासी", "बयासी", "त्रियासी", "चौरासी", "पचासी", "छयासी", "सतासी", "अठासी", "उनन्नब्बे", "नब्बे",
+        "एकानब्बे", "बयानब्बे", "त्रियानब्बे", "चौरानब्बे", "पञ्चानब्बे", "छयानब्बे", "सन्तानब्बे", "अन्ठानब्बे", "उनन्सय", "सय"
+    )
+
+    private fun convertNumberToNepaliWords(number: Long): String {
+        if (number == 0L) return "शून्य"
+        
+        var num = number
+        val parts = mutableListOf<String>()
+        
+        // Crore (करोड) - 1,00,00,000
+        if (num >= 10000000L) {
+            val crore = num / 10000000L
+            parts.add("${convertNumberToNepaliWords(crore)} करोड")
+            num %= 10000000L
+        }
+        
+        // Lakh (लाख) - 1,00,000
+        if (num >= 100000L) {
+            val lakh = num / 100000L
+            parts.add("${convertNumberToNepaliWords(lakh)} लाख")
+            num %= 100000L
+        }
+        
+        // Thousand (हजार) - 1,000
+        if (num >= 1000L) {
+            val thousand = num / 1000L
+            parts.add("${convertNumberToNepaliWords(thousand)} हजार")
+            num %= 1000L
+        }
+        
+        // Hundred (सय) - 100
+        if (num >= 100L) {
+            val hundred = num / 100L
+            parts.add("${nepaliNumbers1to100[hundred.toInt()]} सय")
+            num %= 100L
+        }
+        
+        // 1 to 99
+        if (num > 0L) {
+            parts.add(nepaliNumbers1to100[num.toInt()])
+        }
+        
+        return parts.joinToString(" ").trim()
     }
 
     fun dismissUpdateDialog() {

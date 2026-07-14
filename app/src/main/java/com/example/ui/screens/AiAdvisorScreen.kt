@@ -32,7 +32,7 @@ fun AiAdvisorScreen(
     var unlockPin by remember { mutableStateOf("") }
     var unlockError by remember { mutableStateOf(false) }
 
-    val canUseAi = loggedInUser?.canUseAiAdvisor == true || currentRole == com.example.ui.UserRole.ADMIN
+    val canUseAi = loggedInUser?.isSuperAdmin == true || loggedInUser?.canUseAiAdvisor == true
     if (!canUseAi) {
         Scaffold(
             topBar = {
@@ -115,7 +115,7 @@ fun AiAdvisorScreen(
 
                         Button(
                             onClick = {
-                                val authUser = viewModel.usersList.find { it.pin == unlockPin && it.isEnabled && (it.role == com.example.ui.UserRole.ADMIN || it.canUseAiAdvisor) }
+                                val authUser = viewModel.usersList.find { it.pin == unlockPin && it.isEnabled && (it.isSuperAdmin || it.canUseAiAdvisor) }
                                 if (authUser != null) {
                                     viewModel.setUserRole(com.example.ui.UserRole.ADMIN)
                                     unlockPin = ""

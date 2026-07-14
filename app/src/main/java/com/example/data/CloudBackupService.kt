@@ -17,6 +17,7 @@ data class CloudBackupPayload(
     val products: List<Product>,
     val sales: List<Sale>,
     val saleItems: List<SaleItem>,
+    val productReturns: List<ProductReturn>? = null,
     val formattedReport: String? = null,
     val backupTimestamp: Long = System.currentTimeMillis(),
     val storeName: String = "Purbesh Stationery",

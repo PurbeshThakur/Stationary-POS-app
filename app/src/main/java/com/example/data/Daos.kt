@@ -68,3 +68,22 @@ interface SaleDao {
     @Query("DELETE FROM sale_items")
     suspend fun deleteAllSaleItems()
 }
+
+@Dao
+interface ProductReturnDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReturn(productReturn: ProductReturn): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReturns(returns: List<ProductReturn>)
+
+    @Query("SELECT * FROM product_returns ORDER BY timestamp DESC")
+    fun getAllReturns(): Flow<List<ProductReturn>>
+
+    @Query("SELECT * FROM product_returns ORDER BY timestamp DESC")
+    suspend fun getAllReturnsList(): List<ProductReturn>
+
+    @Query("DELETE FROM product_returns")
+    suspend fun deleteAllReturns()
+}
+

@@ -45,7 +45,23 @@ fun SuperAdminScreen(
     val auditLogs by viewModel.auditLogs.collectAsState()
 
     var selectedTab by remember { mutableStateOf(0) }
-    val tabTitles = listOf("Profiles & Access", "System Audit Trails", "Shop Configuration", "Store Credit Accounts")
+    val tabTitles = listOf(
+        com.example.util.t("profiles_access", viewModel),
+        com.example.util.t("system_audit_trails", viewModel),
+        com.example.util.t("shop_configuration", viewModel),
+        com.example.util.t("store_credit_accounts", viewModel)
+    )
+
+    val tabs = remember(loggedInUser) {
+        val list = mutableListOf<Int>()
+        if (loggedInUser?.isSuperAdmin == true || loggedInUser?.canManageStoreCredit == true) {
+            list.add(3)
+        }
+        list.add(0)
+        list.add(1)
+        list.add(2)
+        list
+    }
 
     var showAddDialog by remember { mutableStateOf(false) }
     var userToEdit by remember { mutableStateOf<User?>(null) }
@@ -56,16 +72,20 @@ fun SuperAdminScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(modifier = Modifier.padding(start = 4.dp)) {
                         Text(
-                            text = "Super Admin Terminal",
+                            text = com.example.util.t("super_admin_terminal", viewModel),
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Security & Permissions Hub",
+                            text = com.example.util.t("security_permissions_hub", viewModel),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 },
@@ -78,14 +98,19 @@ fun SuperAdminScreen(
                             )
                         }
                     } else {
-                        Icon(
-                            imageVector = Icons.Default.AdminPanelSettings,
-                            contentDescription = "Admin icon",
-                            tint = MaterialTheme.colorScheme.primary,
+                        Box(
                             modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .size(28.dp)
-                        )
+                                .padding(start = 12.dp, end = 4.dp)
+                                .size(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AdminPanelSettings,
+                                contentDescription = "Admin icon",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -95,15 +120,14 @@ fun SuperAdminScreen(
                     )
 
                     if (selectedTab == 0) {
-                        Button(
-                            onClick = { showAddDialog = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        IconButton(
+                            onClick = { showAddDialog = true }
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add user")
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("New Profile", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = Icons.Default.PersonAdd,
+                                contentDescription = "Add user",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     } else if (selectedTab == 1) {
                         IconButton(onClick = { showClearLogsConfirm = true }) {
@@ -127,12 +151,13 @@ fun SuperAdminScreen(
                 .padding(innerPadding)
         ) {
             // Main Admin Control Tabs
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                contentColor = MaterialTheme.colorScheme.primary
+                contentColor = MaterialTheme.colorScheme.primary,
+                edgePadding = 16.dp
             ) {
-                tabTitles.forEachIndexed { index, title ->
+                tabs.forEachIndexed { index, tabId ->
                     Tab(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
@@ -142,7 +167,7 @@ fun SuperAdminScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(
-                                    imageVector = when (index) {
+                                    imageVector = when (tabId) {
                                         0 -> Icons.Default.Group
                                         1 -> Icons.Default.ReceiptLong
                                         2 -> Icons.Default.Storefront
@@ -152,7 +177,7 @@ fun SuperAdminScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Text(
-                                    text = title,
+                                    text = tabTitles[tabId],
                                     fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 13.sp
                                 )
@@ -168,21 +193,23 @@ fun SuperAdminScreen(
                     .weight(1f)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                when (selectedTab) {
-                    0 -> ProfilesTabContent(
-                        users = users,
-                        loggedInUser = loggedInUser,
-                        onEditUser = { userToEdit = it }
-                    )
-                    1 -> AuditLogsTabContent(
-                        logs = auditLogs
-                    )
-                    2 -> ShopConfigTabContent(
-                        viewModel = viewModel
-                    )
-                    3 -> CustomersTabContent(
-                        viewModel = viewModel
-                    )
+                if (selectedTab < tabs.size) {
+                    when (tabs[selectedTab]) {
+                        0 -> ProfilesTabContent(
+                            users = users,
+                            loggedInUser = loggedInUser,
+                            onEditUser = { userToEdit = it }
+                        )
+                        1 -> AuditLogsTabContent(
+                            logs = auditLogs
+                        )
+                        2 -> ShopConfigTabContent(
+                            viewModel = viewModel
+                        )
+                        3 -> CustomersTabContent(
+                            viewModel = viewModel
+                        )
+                    }
                 }
             }
         }
@@ -519,6 +546,7 @@ fun ProfilesTabContent(
                             PermissionChip("Reports & Analytics", user.canViewReports, Icons.Default.QueryStats)
                             PermissionChip("POS Sell Terminal", user.canPerformSale, Icons.Default.ShoppingCart)
                             PermissionChip("Gemini AI Advisor", user.canUseAiAdvisor, Icons.Default.AutoAwesome)
+                            PermissionChip("Store Credit Accounts", user.canManageStoreCredit, Icons.Default.AccountBalance)
                             if (user.isSuperAdmin) {
                                 PermissionChip("Super Admin Powers", true, Icons.Default.AdminPanelSettings, isSuper = true)
                             }
@@ -699,7 +727,7 @@ fun AuditLogsTabContent(
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(filteredLogs) { log ->
+                items(filteredLogs, key = { "${it.timestamp}_${it.username}_${it.action}" }) { log ->
                     AuditLogCard(log = log)
                 }
             }
@@ -818,6 +846,7 @@ fun UserEditorDialog(
     var canViewReports by remember { mutableStateOf(user?.canViewReports ?: true) }
     var canPerformSale by remember { mutableStateOf(user?.canPerformSale ?: true) }
     var canUseAiAdvisor by remember { mutableStateOf(user?.canUseAiAdvisor ?: true) }
+    var canManageStoreCredit by remember { mutableStateOf(user?.canManageStoreCredit ?: true) }
     var isSuperAdmin by remember { mutableStateOf(user?.isSuperAdmin ?: false) }
 
     var selectedColor by remember { mutableStateOf(user?.avatarColor ?: 0xFF6200EE) }
@@ -912,6 +941,7 @@ fun UserEditorDialog(
                                             canViewReports = true
                                             canPerformSale = true
                                             canUseAiAdvisor = true
+                                            canManageStoreCredit = true
                                         }
                                     }
                                 },
@@ -988,6 +1018,9 @@ fun UserEditorDialog(
                     PermissionToggleRow("Can Consult Gemini AI Advisor", canUseAiAdvisor, { canUseAiAdvisor = it })
                 }
                 item {
+                    PermissionToggleRow("Can Manage Store Credit Accounts", canManageStoreCredit, { canManageStoreCredit = it })
+                }
+                item {
                     PermissionToggleRow(
                         label = "Grant Super Admin Power",
                         checked = isSuperAdmin,
@@ -1052,7 +1085,8 @@ fun UserEditorDialog(
                                 canViewReports = canViewReports,
                                 canPerformSale = canPerformSale,
                                 canUseAiAdvisor = canUseAiAdvisor,
-                                isSuperAdmin = isSuperAdmin || selectedRole == UserRole.ADMIN
+                                canManageStoreCredit = canManageStoreCredit,
+                                isSuperAdmin = isSuperAdmin
                             )
                         )
                     }
@@ -1168,13 +1202,13 @@ fun ShopConfigTabContent(
                         }
                         Column {
                             Text(
-                                text = "Business Identity",
+                                text = com.example.util.t("business_identity", viewModel),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Customize your shop brand and invoice name",
+                                text = com.example.util.t("customize_brand_desc", viewModel),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1184,7 +1218,7 @@ fun ShopConfigTabContent(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     Text(
-                        text = "The business name is displayed on the login terminal, the sales dashboard header, generated cloud backups, and exported transaction audit reports.",
+                        text = com.example.util.t("business_name_desc", viewModel),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1195,7 +1229,7 @@ fun ShopConfigTabContent(
                             currentNameInput = it
                             saveSuccess = false
                         },
-                        label = { Text("Business/Shop Name") },
+                        label = { Text(com.example.util.t("business_shop_name", viewModel)) },
                         placeholder = { Text("e.g. Purbesh Stationery") },
                         leadingIcon = {
                             Icon(Icons.Default.Edit, contentDescription = null)
@@ -1215,7 +1249,7 @@ fun ShopConfigTabContent(
                             currentPanInput = it
                             saveSuccess = false
                         },
-                        label = { Text("PAN Number (Optional)") },
+                        label = { Text(com.example.util.t("pan_number_optional", viewModel)) },
                         placeholder = { Text("e.g. 987654321") },
                         leadingIcon = {
                             Icon(Icons.Default.Badge, contentDescription = null)
@@ -1232,7 +1266,7 @@ fun ShopConfigTabContent(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
                     Text(
-                        text = "Receipt Formatting & Printing Settings",
+                        text = com.example.util.t("receipt_formatting", viewModel),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1244,7 +1278,7 @@ fun ShopConfigTabContent(
                             currentHeaderInput = it
                             saveSuccess = false
                         },
-                        label = { Text("Receipt Sub-Header / Slogan") },
+                        label = { Text(com.example.util.t("receipt_subheader", viewModel)) },
                         placeholder = { Text("e.g. Your Premium Writing Hub") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -1257,7 +1291,7 @@ fun ShopConfigTabContent(
                             currentFooterInput = it
                             saveSuccess = false
                         },
-                        label = { Text("Receipt Thank-You Footer Note") },
+                        label = { Text(com.example.util.t("receipt_thank_you", viewModel)) },
                         placeholder = { Text("e.g. Thank you for your visit!") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -1271,12 +1305,12 @@ fun ShopConfigTabContent(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Show Product Barcode Reference",
+                                text = com.example.util.t("show_product_barcode", viewModel),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Appends the scan code reference of sold items to invoice bottom.",
+                                text = com.example.util.t("appends_barcode_desc", viewModel),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -1297,12 +1331,12 @@ fun ShopConfigTabContent(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Detailed Discount Breakdown",
+                                text = com.example.util.t("detailed_discount_breakdown", viewModel),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Show original subtotal and discount deduction details.",
+                                text = com.example.util.t("show_discount_details_desc", viewModel),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -1333,7 +1367,7 @@ fun ShopConfigTabContent(
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "Store preferences and receipt layout updated!",
+                                    text = com.example.util.t("store_preferences_updated", viewModel),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     fontWeight = FontWeight.Medium
@@ -1385,7 +1419,7 @@ fun ShopConfigTabContent(
                             contentDescription = "Save Settings"
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save Changes")
+                        Text(com.example.util.t("save_changes", viewModel))
                     }
                 }
             }
@@ -1433,7 +1467,7 @@ fun CustomersTabContent(
                     }
                     Column {
                         Text("Total Outstanding Store Credit", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text("NPR ${String.format("%.2f", totalDebtOutstanding)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("NPR ${com.example.util.tNum(String.format("%.2f", totalDebtOutstanding), viewModel)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text("Active credit lines to regular retail consumers.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
@@ -1463,7 +1497,7 @@ fun CustomersTabContent(
                 }
             }
         } else {
-            items(customers) { customer ->
+            items(customers, key = { it.id }) { customer ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -1481,7 +1515,7 @@ fun CustomersTabContent(
                                 Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             }
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Phone: ${customer.phone}", fontSize = 12.sp, color = Color.Gray)
+                            Text("Phone: ${com.example.util.tNum(customer.phone, viewModel)}", fontSize = 12.sp, color = Color.Gray)
                             if (!customer.address.isNullOrBlank()) {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text("Address: ${customer.address}", fontSize = 12.sp, color = Color.Gray)
@@ -1492,7 +1526,7 @@ fun CustomersTabContent(
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("OUTSTANDING", fontSize = 9.sp, color = Color.Gray)
                                 val balanceColor = if (customer.storeCredit > 0.0) MaterialTheme.colorScheme.error else Color.Gray
-                                Text("NPR ${String.format("%.2f", customer.storeCredit)}", fontWeight = FontWeight.Bold, color = balanceColor)
+                                Text("NPR ${com.example.util.tNum(String.format("%.2f", customer.storeCredit), viewModel)}", fontWeight = FontWeight.Bold, color = balanceColor)
                             }
 
                             Row {
@@ -1584,7 +1618,7 @@ fun CustomersTabContent(
             title = { Text("Adjust Ledger: ${target.name}", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Text("Current Outstanding Debt: NPR ${String.format("%.2f", target.storeCredit)}", fontSize = 13.sp)
+                    Text("Current Outstanding Debt: NPR ${com.example.util.tNum(String.format("%.2f", target.storeCredit), viewModel)}", fontSize = 13.sp)
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ElevatedFilterChip(
@@ -1712,3 +1746,50 @@ fun CustomersTabContent(
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StoreCreditScreen(
+    viewModel: InventoryViewModel,
+    onBack: (() -> Unit)? = null
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Store Credit Accounts",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF09090B)
+                )
+            )
+        },
+        containerColor = Color(0xFF09090B)
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF09090B))
+                .padding(innerPadding)
+        ) {
+            CustomersTabContent(viewModel = viewModel)
+        }
+    }
+}
+

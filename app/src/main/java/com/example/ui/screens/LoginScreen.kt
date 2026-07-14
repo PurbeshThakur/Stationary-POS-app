@@ -1,13 +1,11 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -21,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -34,10 +34,6 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.InventoryViewModel
 import com.example.ui.User
 import com.example.ui.UserRole
-import androidx.compose.foundation.Image
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import com.example.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +42,6 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit
 ) {
     val users by viewModel.usersListState.collectAsState()
-    val shopName by viewModel.shopName.collectAsState()
     var selectedUser by remember { mutableStateOf<User?>(null) }
     var pinText by remember { mutableStateOf("") }
     var pinVisible by remember { mutableStateOf(false) }
@@ -56,7 +51,6 @@ fun LoginScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Trigger success callback when loggedInUser updates to non-null
     val loggedInUser by viewModel.loggedInUser.collectAsState()
     LaunchedEffect(loggedInUser) {
         if (loggedInUser != null) {
@@ -71,177 +65,165 @@ fun LoginScreen(
                 .padding(innerPadding),
             contentAlignment = Alignment.Center
         ) {
-            // High-quality native atmospheric background gradient
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xFF14051D), // Deep dark violet
-                                Color(0xFF09030C), // Dark purple-black
-                                Color(0xFF000000)  // Pure black
-                            )
+            // Ambient glowing background with shades of blue, purple, and pink
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF0F172A), // Deep Slate Blue
+                            Color(0xFF1E1B4B), // Purple-Indigo
+                            Color(0xFF311042)  // Deep Pinkish Magenta
                         )
                     )
-            ) {
-                // Ambient center radial glow
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFF2A0B30).copy(alpha = 0.6f),
-                                    Color.Transparent
-                                ),
-                                radius = 2000f
-                            )
-                        )
+                )
+
+                // Glowing blurry ambient spots
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFF3B82F6).copy(alpha = 0.2f), Color.Transparent),
+                        radius = size.width * 0.65f
+                    ),
+                    radius = size.width * 0.65f,
+                    center = Offset(size.width * 0.15f, size.height * 0.2f)
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFF8B5CF6).copy(alpha = 0.2f), Color.Transparent),
+                        radius = size.width * 0.65f
+                    ),
+                    radius = size.width * 0.65f,
+                    center = Offset(size.width * 0.85f, size.height * 0.5f)
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFFEC4899).copy(alpha = 0.15f), Color.Transparent),
+                        radius = size.width * 0.55f
+                    ),
+                    radius = size.width * 0.55f,
+                    center = Offset(size.width * 0.35f, size.height * 0.85f)
                 )
             }
+
             Column(
                 modifier = Modifier
-                    .fillMaxWidth(0.92f)
+                    .fillMaxSize()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Brand Header with Icon
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    Color.Transparent
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
+                // Top section with Language switch and Title Header
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Language toggle switch at the top right
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)),
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        CustomLanguageToggle(viewModel = viewModel)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Brand Logo - Open Book Icon
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(Color.White.copy(alpha = 0.08f), CircleShape)
+                            .border(1.2.dp, Color.White.copy(alpha = 0.2f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.MenuBook,
                             contentDescription = "Stationery Store Logo",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(32.dp)
+                            tint = Color(0xFFFFD700), // Golden yellow accent
+                            modifier = Modifier.size(36.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "PURBESH STATIONERY",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp,
+                            color = Color.White,
+                            fontSize = 24.sp
+                        ),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Smart Retail POS & Inventory System",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.7f),
+                            letterSpacing = 0.5.sp
+                        ),
+                        textAlign = TextAlign.Center
+                    )
                 }
 
-                Text(
-                    text = shopName,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Text(
-                    text = com.example.util.t("subtitle", viewModel),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                // Center Glassmorphism card for User Selection
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.96f)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.25f),
+                                    Color.White.copy(alpha = 0.03f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 20.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = com.example.util.t("select_profile", viewModel),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                letterSpacing = 0.5.sp
+                            )
                         )
 
-                        // Profiles Grid
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(170.dp)
+                        // Custom horizontal layout for the 3 requested profiles
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            items(users) { user ->
+                            users.forEach { user ->
                                 val isSelected = selectedUser?.username == user.username
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                            else MaterialTheme.colorScheme.surface
-                                        )
-                                        .border(
-                                            width = if (isSelected) 2.dp else 1.dp,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                            shape = RoundedCornerShape(16.dp)
-                                        )
-                                        .clickable {
-                                            selectedUser = user
-                                            showError = false
-                                            pinText = ""
-                                        }
-                                        .padding(12.dp)
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        // Avatar
-                                        Box(
-                                            modifier = Modifier
-                                                .size(44.dp)
-                                                .background(Color(user.avatarColor), CircleShape),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = user.fullName.take(1).uppercase(),
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 18.sp
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        Text(
-                                            text = user.fullName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            textAlign = TextAlign.Center,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                        )
-
-                                        Text(
-                                            text = user.role.label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                        )
+                                UserProfileOption(
+                                    user = user,
+                                    isSelected = isSelected,
+                                    onClick = {
+                                        selectedUser = user
+                                        showError = false
+                                        pinText = ""
                                     }
-                                }
+                                )
                             }
                         }
 
-                        // PIN Input section
+                        // PIN Input section (slides/fades in)
                         AnimatedVisibility(
                             visible = selectedUser != null,
                             enter = expandVertically() + fadeIn(),
@@ -250,16 +232,20 @@ fun LoginScreen(
                             selectedUser?.let { user ->
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Divider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        color = Color.White.copy(alpha = 0.15f)
+                                    )
 
                                     Text(
                                         text = com.example.util.t("enter_pin", viewModel),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White.copy(alpha = 0.9f)
+                                        )
                                     )
 
                                     OutlinedTextField(
@@ -270,18 +256,28 @@ fun LoginScreen(
                                                 showError = false
                                             }
                                         },
-                                        label = { Text(com.example.util.t("security_pin", viewModel)) },
-                                        placeholder = { Text("••••") },
-                                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "PIN") },
+                                        label = { Text(com.example.util.t("security_pin", viewModel), color = Color.White.copy(alpha = 0.8f)) },
+                                        placeholder = { Text("••••", color = Color.White.copy(alpha = 0.4f)) },
+                                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "PIN", tint = Color.White.copy(alpha = 0.8f)) },
                                         trailingIcon = {
                                             IconButton(onClick = { pinVisible = !pinVisible }) {
                                                 Icon(
                                                     imageVector = if (pinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                                    contentDescription = if (pinVisible) "Hide PIN" else "Show PIN"
+                                                    contentDescription = if (pinVisible) "Hide PIN" else "Show PIN",
+                                                    tint = Color.White.copy(alpha = 0.8f)
                                                 )
                                             }
                                         },
                                         visualTransformation = if (pinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = Color.White,
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                                            focusedLabelColor = Color.White,
+                                            unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
+                                            cursorColor = Color.White
+                                        ),
                                         keyboardOptions = KeyboardOptions(
                                             keyboardType = KeyboardType.Number,
                                             imeAction = ImeAction.Done
@@ -294,7 +290,7 @@ fun LoginScreen(
                                         ),
                                         singleLine = true,
                                         isError = showError,
-                                        modifier = Modifier.fillMaxWidth(0.85f)
+                                        modifier = Modifier.fillMaxWidth(0.9f)
                                     )
 
                                     if (showError) {
@@ -303,11 +299,10 @@ fun LoginScreen(
                                             color = MaterialTheme.colorScheme.error,
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = FontWeight.Medium,
-                                            textAlign = TextAlign.Center
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 16.dp)
                                         )
                                     }
-
-                                    Spacer(modifier = Modifier.height(4.dp))
 
                                     Button(
                                         onClick = {
@@ -319,13 +314,16 @@ fun LoginScreen(
                                                 pinText = ""
                                             }
                                         },
-                                        modifier = Modifier.fillMaxWidth(0.85f),
+                                        modifier = Modifier.fillMaxWidth(0.9f).height(48.dp),
                                         shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFFFD700), // Glowing Yellow Accent
+                                            contentColor = Color(0xFF1E020A)
+                                        )
                                     ) {
                                         Icon(Icons.Default.Login, contentDescription = "Log In")
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text(com.example.util.t("log_in", viewModel), fontWeight = FontWeight.Bold)
+                                        Text(com.example.util.t("log_in", viewModel), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                     }
                                 }
                             }
@@ -333,23 +331,162 @@ fun LoginScreen(
                     }
                 }
 
-                // Help footer (PINs hidden securely, support contact number displayed)
+                // Support footer message
                 Text(
                     text = "Need assistance? Contact 9746638620",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.8f),
+                        letterSpacing = 0.5.sp
+                    ),
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 12.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
+        }
+    }
+}
 
-            com.example.util.LanguageToggle(
-                viewModel = viewModel,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
+@Composable
+fun CustomLanguageToggle(
+    viewModel: InventoryViewModel,
+    modifier: Modifier = Modifier
+) {
+    val currentLanguage by viewModel.appLanguage.collectAsState()
+    val isEnglish = currentLanguage == "en"
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // EN pill
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(if (isEnglish) Color(0xFFFFD700) else Color.Transparent)
+                .clickable { viewModel.setAppLanguage("en") }
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "EN",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 11.sp,
+                color = if (isEnglish) Color(0xFF1E020A) else Color.White.copy(alpha = 0.7f)
             )
         }
+
+        // नेपाली pill
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(if (!isEnglish) Color(0xFFFFD700) else Color.Transparent)
+                .clickable { viewModel.setAppLanguage("ne") }
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "नेपाली",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 11.sp,
+                color = if (!isEnglish) Color(0xFF1E020A) else Color.White.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+@Composable
+fun UserProfileOption(
+    user: User,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val scale by animateFloatAsState(targetValue = if (isSelected) 1.1f else 1.0f, label = "scale")
+
+    val glowColor = when (user.username.lowercase()) {
+        "purbesh" -> Color(0xFF00C853) // Green for Purbesh
+        "anita" -> Color(0xFF9C27B0)   // Purple for Anita
+        "d" -> Color(0xFFFF9800)       // Orange for D
+        else -> Color(user.avatarColor)
+    }
+
+    val displayRole = when (user.username.lowercase()) {
+        "purbesh" -> "Admin"
+        "anita" -> "Cashier/Staff"
+        "d" -> "Staff"
+        else -> user.role.label
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+            .padding(4.dp)
+    ) {
+        // Glowing profile circle
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            glowColor.copy(alpha = if (isSelected) 0.35f else 0.08f),
+                            Color.Transparent
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(glowColor, CircleShape)
+                    .border(
+                        width = if (isSelected) 3.dp else 1.dp,
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.3f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = user.fullName.take(1).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 24.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = user.fullName,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.Bold,
+                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f)
+            ),
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+            text = displayRole,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                color = glowColor.copy(alpha = if (isSelected) 1f else 0.75f)
+            ),
+            textAlign = TextAlign.Center
+        )
     }
 }

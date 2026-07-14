@@ -4,11 +4,27 @@ import kotlinx.coroutines.flow.Flow
 
 class StationeryRepository(
     val productDao: ProductDao,
-    val saleDao: SaleDao
+    val saleDao: SaleDao,
+    val productReturnDao: ProductReturnDao
 ) {
     val allProducts: Flow<List<Product>> = productDao.getAllProducts()
     val allSales: Flow<List<Sale>> = saleDao.getAllSales()
     val allSaleItems: Flow<List<SaleItem>> = saleDao.getAllSaleItems()
+    val allReturns: Flow<List<ProductReturn>> = productReturnDao.getAllReturns()
+
+    suspend fun insertReturn(productReturn: ProductReturn): Long {
+        val product = productDao.getProductById(productReturn.productId)
+        if (product != null) {
+            val newStock = product.stockQuantity + productReturn.quantity
+            productDao.updateStock(product.id, newStock)
+        }
+        return productReturnDao.insertReturn(productReturn)
+    }
+
+    suspend fun insertReturns(returns: List<ProductReturn>) {
+        productReturnDao.insertReturns(returns)
+    }
+
 
     suspend fun getProductByBarcode(barcode: String): Product? {
         return productDao.getProductByBarcode(barcode)
@@ -42,17 +58,21 @@ class StationeryRepository(
         productDao.deleteAllProducts()
         saleDao.deleteAllSales()
         saleDao.deleteAllSaleItems()
+        productReturnDao.deleteAllReturns()
     }
 
-    suspend fun restoreDatabase(products: List<Product>, sales: List<Sale>, saleItems: List<SaleItem>) {
+    suspend fun restoreDatabase(products: List<Product>, sales: List<Sale>, saleItems: List<SaleItem>, returns: List<ProductReturn> = emptyList()) {
         productDao.deleteAllProducts()
         saleDao.deleteAllSales()
         saleDao.deleteAllSaleItems()
+        productReturnDao.deleteAllReturns()
 
         productDao.insertProducts(products)
         saleDao.insertSales(sales)
         saleDao.insertSaleItems(saleItems)
+        productReturnDao.insertReturns(returns)
     }
+
 
     /**
      * Executes a sale:
@@ -117,7 +137,11 @@ class StationeryRepository(
 
         // 4. Merge Products first so they exist when inserting sale items
         for (cloudProduct in cloudProducts) {
-            val localProduct = localProducts.find { it.barcode == cloudProduct.barcode }
+            val localProduct = if (cloudProduct.barcode.isNotBlank()) {
+                localProducts.find { it.barcode == cloudProduct.barcode }
+            } else {
+                localProducts.find { it.name.equals(cloudProduct.name, ignoreCase = true) }
+            }
             val unsyncedSold = localUnsyncedQuantities[cloudProduct.barcode] ?: 0
             val reconciledStock = (cloudProduct.stockQuantity - unsyncedSold).coerceAtLeast(0)
 

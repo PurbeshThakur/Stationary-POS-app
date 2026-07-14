@@ -30,6 +30,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,6 +63,8 @@ fun DashboardScreen(
     val checkoutReceipt by viewModel.checkoutReceipt.collectAsState()
     val shopName by viewModel.shopName.collectAsState()
     val customers by viewModel.customersListState.collectAsState()
+    val currentRole by viewModel.currentUserRole.collectAsState()
+    val loggedInUser by viewModel.loggedInUser.collectAsState()
 
     var showCameraScanner by remember { mutableStateOf(false) }
     var manualBarcode by remember { mutableStateOf("") }
@@ -77,9 +83,9 @@ fun DashboardScreen(
     var discountInput by remember { mutableStateOf("") }
     var discountTypeIsPercentage by remember { mutableStateOf(false) } // false = NPR, true = %
 
-    val cartTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
-    val cartCost = cart.entries.sumOf { it.key.costPrice * it.value }
-    val maxDiscount = (cartTotal - cartCost).coerceAtLeast(0.0)
+    val cartTotal = remember(cart) { cart.entries.sumOf { it.key.sellingPrice * it.value } }
+    val cartCost = remember(cart) { cart.entries.sumOf { it.key.costPrice * it.value } }
+    val maxDiscount = remember(cartTotal, cartCost) { (cartTotal - cartCost).coerceAtLeast(0.0) }
 
     val discountAmount = remember(discountInput, discountTypeIsPercentage, cartTotal, cartCost) {
         val inputVal = discountInput.toDoubleOrNull() ?: 0.0
@@ -131,34 +137,34 @@ fun DashboardScreen(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF4A4458)),
+                                .background(Color(0xFFBD00FF).copy(alpha = 0.15f))
+                                .border(1.dp, Color(0xFFBD00FF).copy(alpha = 0.6f), RoundedCornerShape(12.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Store,
-                                contentDescription = "Purbesh Stationary Storefront",
-                                tint = MaterialTheme.colorScheme.primary,
+                                contentDescription = "Purbesh Stationary Logo",
+                                tint = Color(0xFF00E5FF),
                                 modifier = Modifier.size(24.dp)
                             )
                         }
                         Column {
                             Text(
-                                shopName,
-                                fontWeight = FontWeight.SemiBold,
+                                text = "PURBESH STATIONARY",
+                                fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = Color.White
                             )
                             Text(
-                                "Stationery Shop Inventory",
+                                text = com.example.util.t("stationery_shop_inventory", viewModel),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp,
-                                color = Color(0xFF938F99)
+                                color = Color(0xFF00E5FF)
                             )
                         }
                     }
                 },
                 actions = {
-                    val currentRole by viewModel.currentUserRole.collectAsState()
                     val loggedInUser by viewModel.loggedInUser.collectAsState()
                     var showProfileMenu by remember { mutableStateOf(false) }
 
@@ -172,15 +178,16 @@ fun DashboardScreen(
                             onClick = { showProfileMenu = true },
                             modifier = Modifier.padding(end = 8.dp)
                         ) {
+                            val avatarColorVal = loggedInUser?.avatarColor ?: 0xFFBD00FF
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .background(Color(loggedInUser?.avatarColor ?: 0xFF6200EE), CircleShape)
-                                    .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                                    .background(Color(avatarColorVal).copy(alpha = 0.2f), CircleShape)
+                                    .border(1.5.dp, Color(avatarColorVal), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = loggedInUser?.fullName?.take(1)?.uppercase() ?: "U",
+                                    text = loggedInUser?.fullName?.trim()?.firstOrNull()?.toString()?.uppercase() ?: "U",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
@@ -213,7 +220,7 @@ fun DashboardScreen(
                             if (currentRole == com.example.ui.UserRole.CASHIER) {
                                 DropdownMenuItem(
                                     leadingIcon = { Icon(Icons.Default.VerifiedUser, contentDescription = "Elevate", tint = MaterialTheme.colorScheme.primary) },
-                                    text = { Text("Elevate to Admin") },
+                                    text = { Text(com.example.util.t("elevate_to_admin", viewModel)) },
                                     onClick = {
                                         showProfileMenu = false
                                         showRoleUnlockDialog = true
@@ -222,7 +229,7 @@ fun DashboardScreen(
                             } else {
                                 DropdownMenuItem(
                                     leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = "Demote", tint = MaterialTheme.colorScheme.outline) },
-                                    text = { Text("Switch to Cashier Role") },
+                                    text = { Text(com.example.util.t("switch_to_cashier", viewModel)) },
                                     onClick = {
                                         showProfileMenu = false
                                         viewModel.setUserRole(com.example.ui.UserRole.CASHIER)
@@ -232,7 +239,7 @@ fun DashboardScreen(
 
                             DropdownMenuItem(
                                 leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "Log Out", tint = MaterialTheme.colorScheme.error) },
-                                text = { Text("Log Out / Switch Profile", color = MaterialTheme.colorScheme.error) },
+                                text = { Text(com.example.util.t("log_out_switch_profile", viewModel), color = MaterialTheme.colorScheme.error) },
                                 onClick = {
                                     showProfileMenu = false
                                     viewModel.logout()
@@ -242,18 +249,18 @@ fun DashboardScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = Color(0xFF09090B)
                 )
             )
-        }
+        },
+        containerColor = Color(0xFF09090B)
     ) { paddingValues ->
-        val loggedInUser by viewModel.loggedInUser.collectAsState()
-        val currentRole by viewModel.currentUserRole.collectAsState()
         val canPerformSale = loggedInUser?.canPerformSale == true || currentRole == com.example.ui.UserRole.ADMIN
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(Color(0xFF09090B))
                 .padding(paddingValues)
         ) {
             if (!canPerformSale) {
@@ -264,8 +271,8 @@ fun DashboardScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFFF007F).copy(alpha = 0.3f), RoundedCornerShape(24.dp)),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF13131A)),
                         shape = RoundedCornerShape(24.dp)
                     ) {
                         Column(
@@ -276,29 +283,30 @@ fun DashboardScreen(
                             Box(
                                 modifier = Modifier
                                     .size(72.dp)
-                                    .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(20.dp)),
+                                    .background(Color(0xFFFF007F).copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                                    .border(1.dp, Color(0xFFFF007F), RoundedCornerShape(20.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Lock,
                                     contentDescription = "Lock",
-                                    tint = MaterialTheme.colorScheme.error,
+                                    tint = Color(0xFFFF007F),
                                     modifier = Modifier.size(36.dp)
                                 )
                             }
 
                             Text(
-                                text = "POS Terminal Restricted",
+                                text = com.example.util.t("pos_terminal_restricted", viewModel),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color.White,
                                 textAlign = TextAlign.Center
                             )
 
                             Text(
-                                text = "Your cashier profile does not have permission to perform sales. Please contact the administrator or enter an authorized PIN to elevate access.",
+                                text = com.example.util.t("pos_terminal_restricted_desc", viewModel),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                color = Color.White.copy(alpha = 0.7f),
                                 textAlign = TextAlign.Center
                             )
 
@@ -311,18 +319,25 @@ fun DashboardScreen(
                                     pinVal = it
                                     pinErr = false
                                 },
-                                label = { Text("Enter Authorized Admin PIN") },
+                                label = { Text(com.example.util.t("enter_admin_pin", viewModel), color = Color.White.copy(alpha = 0.6f)) },
                                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 isError = pinErr,
                                 singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFFBD00FF),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    focusedLabelColor = Color(0xFFBD00FF)
+                                ),
                                 modifier = Modifier.fillMaxWidth()
                             )
 
                             if (pinErr) {
                                 Text(
-                                    text = "Incorrect PIN. Try default '1111' or '1234'.",
-                                    color = MaterialTheme.colorScheme.error,
+                                    text = com.example.util.t("incorrect_pin", viewModel),
+                                    color = Color(0xFFFF007F),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -337,11 +352,15 @@ fun DashboardScreen(
                                         pinErr = true
                                     }
                                 },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFBD00FF),
+                                    contentColor = Color.White
+                                ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.VerifiedUser, contentDescription = "Verify")
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Elevate Terminal")
+                                Text(com.example.util.t("elevate_terminal", viewModel))
                             }
                         }
                     }
@@ -362,50 +381,119 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Cart item count card
-                        Card(
-                            modifier = Modifier.weight(1f),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF13131A).copy(alpha = 0.6f))
+                                .border(
+                                    width = 1.dp,
+                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(Color(0xFF00E5FF).copy(alpha = 0.4f), Color.Transparent)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .padding(12.dp)
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Icon(Icons.Default.ShoppingCart, contentDescription = "Cart Items", tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Cart Items", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
-                                Text("${cart.values.sum()}", fontWeight = FontWeight.Black, fontSize = 22.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Column {
+                                Icon(
+                                    imageVector = Icons.Default.ShoppingCart,
+                                    contentDescription = "Cart Items",
+                                    tint = Color(0xFF00E5FF)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = com.example.util.t("cart_items", viewModel),
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${cart.values.sum()}",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 20.sp,
+                                    color = Color.White
+                                )
                             }
                         }
 
                         // Low stock alert count card
-                        Card(
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clickable { onNavigateToInventory() },
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (lowStockList.isNotEmpty()) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Icon(
-                                    Icons.Default.Warning,
-                                    contentDescription = "Low Stock Alert",
-                                    tint = if (lowStockList.isNotEmpty()) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF13131A).copy(alpha = 0.6f))
+                                .border(
+                                    width = 1.dp,
+                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(
+                                            (if (lowStockList.isNotEmpty()) Color(0xFFFF007F) else Color(0xFFBD00FF)).copy(alpha = 0.4f),
+                                            Color.Transparent
+                                        )
+                                    ),
+                                    shape = RoundedCornerShape(16.dp)
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Stock Alerts", fontSize = 12.sp, color = if (lowStockList.isNotEmpty()) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                                Text("${lowStockList.size} Items", fontWeight = FontWeight.Black, fontSize = 22.sp, color = if (lowStockList.isNotEmpty()) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                                .clickable { onNavigateToInventory() }
+                                .padding(12.dp)
+                        ) {
+                            Column {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Low Stock Alert",
+                                    tint = if (lowStockList.isNotEmpty()) Color(0xFFFF007F) else Color(0xFFBD00FF)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = com.example.util.t("stock_alert", viewModel),
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${lowStockList.size} Items",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 18.sp,
+                                    color = Color.White
+                                )
                             }
                         }
 
                         // Cart Value card
-                        val cartTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
-                        Card(
-                            modifier = Modifier.weight(1.2f),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                        Box(
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF13131A).copy(alpha = 0.6f))
+                                .border(
+                                    width = 1.dp,
+                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(Color(0xFFBD00FF).copy(alpha = 0.4f), Color.Transparent)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .padding(12.dp)
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Icon(Icons.Default.Payments, contentDescription = "Cart Total", tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Cart Total", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
-                                Text("NPR ${String.format("%.2f", cartTotal)}", fontWeight = FontWeight.Black, fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Column {
+                                Icon(
+                                    imageVector = Icons.Default.Payments,
+                                    contentDescription = "Cart Total",
+                                    tint = Color(0xFFBD00FF)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = com.example.util.t("cart_total", viewModel),
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "NPR ${com.example.util.tNum(String.format("%.2f", cartTotal), viewModel)}",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -417,21 +505,22 @@ fun DashboardScreen(
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp)),
-                            color = MaterialTheme.colorScheme.errorContainer,
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFFFF007F).copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                            color = Color(0xFFFF007F).copy(alpha = 0.15f),
                             onClick = onNavigateToInventory
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Error, contentDescription = "Alert", tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Default.Error, contentDescription = "Alert", tint = Color(0xFFFF007F))
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    text = "Alert: ${lowStockList.size} stationery items are below minimum stock limits! Tap to view.",
+                                    text = com.example.util.tNum(String.format(com.example.util.t("low_stock_banner_alert", viewModel), lowStockList.size), viewModel),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                    color = Color.White
                                 )
                             }
                         }
@@ -440,37 +529,61 @@ fun DashboardScreen(
 
                 // Scanner Interface Section
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0xFF13131A).copy(alpha = 0.5f))
+                            .border(
+                                width = 1.dp,
+                                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                    listOf(Color(0xFFBD00FF).copy(alpha = 0.2f), Color(0xFF00E5FF).copy(alpha = 0.2f))
+                                ),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .padding(16.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            Text(
+                                text = com.example.util.t("scan_stationery_barcode", viewModel),
+                                fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White
+                            )
+                            
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.Start
                             ) {
-                                Text("Scan Stationery Barcode", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                
                                 Button(
                                     onClick = { showCameraScanner = !showCameraScanner },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (showCameraScanner) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
+                                        containerColor = if (showCameraScanner) Color(0xFFFF007F) else Color(0xFFBD00FF),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (showCameraScanner) Color(0xFFFF007F).copy(alpha = 0.5f) else Color(0xFFBD00FF).copy(alpha = 0.5f),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
                                 ) {
                                     Icon(
                                         imageVector = if (showCameraScanner) Icons.Default.Close else Icons.Default.QrCodeScanner,
-                                        contentDescription = "Toggle Scan"
+                                        contentDescription = "Toggle Scan",
+                                        tint = Color.White
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(if (showCameraScanner) "Close Camera" else "Open Camera Scanner")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (showCameraScanner) com.example.util.t("close_camera", viewModel) else com.example.util.t("open_camera_scanner", viewModel),
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
 
                             // Camera scanner preview
                             AnimatedVisibility(
@@ -478,7 +591,10 @@ fun DashboardScreen(
                                 enter = expandVertically() + fadeIn(),
                                 exit = shrinkVertically() + fadeOut()
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
                                     CameraScannerView(
                                         onBarcodeDetected = { code ->
                                             viewModel.scanBarcode(code) { success, msg ->
@@ -492,36 +608,79 @@ fun DashboardScreen(
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        "Align product barcode within camera view",
+                                        text = com.example.util.t("align_product_barcode", viewModel),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = Color.White.copy(alpha = 0.6f)
                                     )
                                 }
                             }
 
                             if (!showCameraScanner) {
-                                // Manual Input/Simulator helper
-                                Text(
-                                    "No camera? Use the quick scan simulator below or type a barcode:",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
-
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    OutlinedTextField(
-                                        value = manualBarcode,
-                                        onValueChange = { manualBarcode = it },
-                                        label = { Text("Enter Barcode No.") },
-                                        leadingIcon = { Icon(Icons.Default.QrCode, contentDescription = "Barcode") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        OutlinedTextField(
+                                            value = manualBarcode,
+                                            onValueChange = { manualBarcode = it },
+                                            label = { Text(com.example.util.t("enter_barcode_or_name", viewModel)) },
+                                            leadingIcon = { Icon(Icons.Default.QrCode, contentDescription = "Barcode", tint = Color(0xFF00E5FF)) },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedBorderColor = Color(0xFFBD00FF),
+                                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                                focusedLabelColor = Color(0xFFBD00FF),
+                                                unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                                                cursorColor = Color(0xFFBD00FF)
+                                            ),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        
+                                        val suggestions = remember(manualBarcode, products) {
+                                            val query = manualBarcode.trim()
+                                            if (query.length >= 2) {
+                                                products.filter {
+                                                    it.name.contains(query, ignoreCase = true) ||
+                                                    it.barcode.contains(query, ignoreCase = true)
+                                                }.take(5)
+                                            } else {
+                                                emptyList()
+                                            }
+                                        }
+                                        
+                                        if (suggestions.isNotEmpty()) {
+                                            DropdownMenu(
+                                                expanded = true,
+                                                onDismissRequest = { /* Keep open */ },
+                                                properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                suggestions.forEach { prod ->
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Column {
+                                                                Text(prod.name, fontWeight = FontWeight.Bold)
+                                                                Text("Barcode: ${prod.barcode} | Stock: ${prod.stockQuantity} | Price: NPR ${prod.sellingPrice}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                            }
+                                                        },
+                                                        onClick = {
+                                                            viewModel.scanBarcode(prod.barcode) { success, msg ->
+                                                                scanSuccess = success
+                                                                scanMessage = msg
+                                                                if (success) manualBarcode = ""
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     
                                     Button(
                                         onClick = {
@@ -533,50 +692,14 @@ fun DashboardScreen(
                                                 }
                                             }
                                         },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFBD00FF),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier.height(56.dp)
                                     ) {
-                                        Text("Submit")
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // Simulator Row of quick products
-                                Text(
-                                    "⚡ Quick Scanner Simulator (Click product to scan):",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    products.take(6).forEach { prod ->
-                                        AssistChip(
-                                            onClick = {
-                                                viewModel.scanBarcode(prod.barcode) { success, msg ->
-                                                    scanSuccess = success
-                                                    scanMessage = msg
-                                                }
-                                            },
-                                            label = { Text("${prod.name} (${prod.barcode})", overflow = TextOverflow.Ellipsis, maxLines = 1) },
-                                            leadingIcon = {
-                                                Icon(
-                                                    Icons.Default.Add,
-                                                    contentDescription = "Scan",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        )
-                                    }
-                                    if (products.isEmpty()) {
-                                        Text("No products in inventory yet.", fontSize = 11.sp)
+                                        Text(com.example.util.t("submit", viewModel), fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -592,15 +715,16 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Shopping Cart (${cart.size} distinct items)",
+                            text = "${com.example.util.t("shopping_cart", viewModel)} (${com.example.util.tNum(cart.size, viewModel)} ${com.example.util.t("items", viewModel)})",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                         if (cart.isNotEmpty()) {
                             TextButton(onClick = { viewModel.clearCart() }) {
-                                Icon(Icons.Default.DeleteSweep, contentDescription = "Clear All")
+                                Icon(Icons.Default.DeleteSweep, contentDescription = "Clear All", tint = Color(0xFFFF007F))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Clear Cart")
+                                Text(com.example.util.t("clear_cart", viewModel), color = Color(0xFFFF007F))
                             }
                         }
                     }
@@ -609,46 +733,51 @@ fun DashboardScreen(
                 // Cart items
                 if (cart.isEmpty()) {
                     item {
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF13131A).copy(alpha = 0.4f))
+                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                                .padding(vertical = 32.dp, horizontal = 16.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.ShoppingCartCheckout,
-                                contentDescription = "Empty Cart",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Cart is empty",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                            Text(
-                                "Scan stationery barcode or search items to add",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                textAlign = TextAlign.Center
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ShoppingCart,
+                                    contentDescription = "Empty Cart",
+                                    tint = Color.White.copy(alpha = 0.25f),
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = com.example.util.t("cart_is_empty", viewModel),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 } else {
-                    items(cart.entries.toList()) { (product, quantity) ->
+                    items(cart.entries.toList(), key = { it.key.id }) { (product, quantity) ->
                         CartItemRow(
                             product = product,
                             quantity = quantity,
+                            barcodeLabel = com.example.util.tNum(String.format(com.example.util.t("bar_prefix", viewModel), product.barcode), viewModel),
+                            priceEachLabel = com.example.util.tNum(String.format(com.example.util.t("price_each", viewModel), product.sellingPrice), viewModel),
                             onQuantityChanged = { newQty -> viewModel.updateCartQuantity(product, newQty) },
                             onDelete = { viewModel.removeFromCart(product) }
                         )
                     }
-
+                }
                     // Cart summary action
                     item {
                         Spacer(modifier = Modifier.height(12.dp))
-                        val finalPrice = cart.entries.sumOf { it.key.sellingPrice * it.value }
+                        val finalPrice = cartTotal
 
                         Surface(
                             modifier = Modifier
@@ -661,34 +790,34 @@ fun DashboardScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("Subtotal", style = MaterialTheme.typography.bodyMedium)
-                                    Text("NPR ${String.format("%.2f", finalPrice)}", fontWeight = FontWeight.Bold)
+                                    Text(com.example.util.t("subtotal", viewModel), style = MaterialTheme.typography.bodyMedium)
+                                    Text("NPR ${com.example.util.tNum(String.format("%.2f", finalPrice), viewModel)}", fontWeight = FontWeight.Bold)
                                 }
                                 if (discountAmount > 0.0) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text("Discount Applied", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                        Text("- NPR ${String.format("%.2f", discountAmount)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        Text(com.example.util.t("discount_applied", viewModel), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                        Text("- NPR ${com.example.util.tNum(String.format("%.2f", discountAmount), viewModel)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("Tax (Included)", style = MaterialTheme.typography.bodyMedium)
-                                    Text("NPR 0.00", fontWeight = FontWeight.Bold)
+                                    Text(com.example.util.t("tax_included", viewModel), style = MaterialTheme.typography.bodyMedium)
+                                    Text("NPR ${com.example.util.tNum("0.00", viewModel)}", fontWeight = FontWeight.Bold)
                                 }
-                                Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Total Pay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(com.example.util.t("total_pay", viewModel), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     Text(
-                                        "NPR ${String.format("%.2f", (finalPrice - discountAmount).coerceAtLeast(0.0))}",
+                                        "NPR ${com.example.util.tNum(String.format("%.2f", (finalPrice - discountAmount).coerceAtLeast(0.0)), viewModel)}",
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Black,
                                         color = MaterialTheme.colorScheme.primary
@@ -699,6 +828,7 @@ fun DashboardScreen(
 
                                 Button(
                                     onClick = { showCheckoutDialog = true },
+                                    enabled = (finalPrice - discountAmount) >= 1.0,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(50.dp),
@@ -706,14 +836,13 @@ fun DashboardScreen(
                                 ) {
                                     Icon(Icons.Default.Check, contentDescription = "Pay")
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Checkout & Generate Invoice", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    Text(com.example.util.t("checkout_generate_invoice", viewModel), fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                 }
                             }
                         }
                     }
+                    item { Spacer(modifier = Modifier.height(40.dp)) }
                 }
-
-                item { Spacer(modifier = Modifier.height(40.dp)) }
             }
 
             // Floating alert banner for scan confirmations
@@ -752,11 +881,11 @@ fun DashboardScreen(
             }
         }
     }
-}
 
-    // --- Checkout Confirmation Dialog ---
+    // --- Checkout Confirmation Dialog (Slide-Up Bottom Sheet) ---
     if (showCheckoutDialog) {
-        AlertDialog(
+        val haptic = LocalHapticFeedback.current
+        ModalBottomSheet(
             onDismissRequest = { 
                 showCheckoutDialog = false 
                 selectedCustomerIdForCredit = null
@@ -764,294 +893,375 @@ fun DashboardScreen(
                 paymentTransactionId = ""
                 discountInput = ""
             },
-            title = { Text("Complete Transaction", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            tonalElevation = 8.dp,
+            dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)) }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 36.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = com.example.util.t("invoice_bill_summary", viewModel),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+
+                // 1. Structured, semi-transparent Visual Bill Summary Panel detailing Subtotal & Discounts
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Select customer account and payment mode.")
-                    
-                    // Customer Profile Selector Dropdown
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = selectedCustomerIdForCredit?.let { id ->
-                                customers.find { it.id == id }?.name
-                            } ?: "Select Registered Customer",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Customer Profile" + if (selectedPaymentMode == "Credit") " (Required) *" else " (Optional)") },
-                            leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = "Customer") },
-                            trailingIcon = {
-                                IconButton(onClick = { customerDropdownExpanded = !customerDropdownExpanded }) {
-                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand")
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { customerDropdownExpanded = !customerDropdownExpanded }
-                        )
-
-                        DropdownMenu(
-                            expanded = customerDropdownExpanded,
-                            onDismissRequest = { customerDropdownExpanded = false },
-                            modifier = Modifier.fillMaxWidth(0.9f)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            if (customers.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text("No customers with store credit account") },
-                                    onClick = { customerDropdownExpanded = false }
-                                )
-                            } else {
-                                customers.forEach { customer ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(customer.name, fontWeight = FontWeight.Bold)
-                                                Text("Phone: ${customer.phone}" + if (!customer.address.isNullOrBlank()) " | Addr: ${customer.address}" else "", fontSize = 11.sp, color = Color.Gray)
-                                            }
-                                        },
-                                        onClick = {
-                                            selectedCustomerIdForCredit = customer.id
-                                            customerPhone = customer.phone
-                                            customerDropdownExpanded = false
-                                        }
-                                    )
-                                }
+                            Text(com.example.util.t("subtotal", viewModel), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("NPR ${com.example.util.tNum(String.format("%.2f", cartTotal), viewModel)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        
+                        if (discountAmount > 0.0) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(com.example.util.t("discount_applied", viewModel), style = MaterialTheme.typography.bodyMedium, color = Color(0xFFE53935), fontWeight = FontWeight.Bold)
+                                Text("- NPR ${com.example.util.tNum(String.format("%.2f", discountAmount), viewModel)}", fontWeight = FontWeight.Bold, color = Color(0xFFE53935))
                             }
                         }
-                    }
 
-                    if (selectedPaymentMode != "Online") {
-                        OutlinedTextField(
-                            value = customerPhone,
-                            onValueChange = { customerPhone = it },
-                            label = { Text("Customer Mobile (WhatsApp sharing)") },
-                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                         )
-                    }
 
-                    Text("Payment Mode", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        listOf("Cash", "Online", "Credit").forEach { mode ->
-                            FilterChip(
-                                selected = selectedPaymentMode == mode,
-                                onClick = { selectedPaymentMode = mode },
-                                label = { Text(mode, fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(com.example.util.t("total_pay", viewModel), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "NPR ${com.example.util.tNum(String.format("%.2f", (cartTotal - discountAmount).coerceAtLeast(0.0)), viewModel)}",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
+                }
 
-                    if (selectedPaymentMode == "Online") {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Enter Online Payment Details",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        OutlinedTextField(
-                            value = customerPhone,
-                            onValueChange = { customerPhone = it },
-                            label = { Text("Payment Phone Number (Required) *") },
-                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        OutlinedTextField(
-                            value = paymentTransactionId,
-                            onValueChange = { paymentTransactionId = it },
-                            label = { Text("Transaction ID (Required) *") },
-                            leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = "Transaction ID") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                // Customer Profile Selector Dropdown
+                Text(com.example.util.t("select_customer_account", viewModel), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = selectedCustomerIdForCredit?.let { id ->
+                            customers.find { it.id == id }?.name
+                        } ?: com.example.util.t("select_registered_customer", viewModel),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(if (selectedPaymentMode == "Credit") com.example.util.t("customer_profile_required", viewModel) else com.example.util.t("customer_profile_optional", viewModel)) },
+                        leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = "Customer") },
+                        trailingIcon = {
+                            IconButton(onClick = { customerDropdownExpanded = !customerDropdownExpanded }) {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand")
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { customerDropdownExpanded = !customerDropdownExpanded }
+                    )
 
-                    if (selectedPaymentMode == "Credit" && selectedCustomerIdForCredit == null) {
-                        Text(
-                            text = "⚠️ Please select a registered customer to use Credit payment mode.",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    if (selectedPaymentMode == "Online" && 
-                        (customerPhone.isBlank() || paymentTransactionId.isBlank())) {
-                        Text(
-                            text = "⚠️ Please enter Phone Number and Transaction ID to proceed.",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Text("Apply Discount (Optional)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    DropdownMenu(
+                        expanded = customerDropdownExpanded,
+                        onDismissRequest = { customerDropdownExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
                     ) {
-                        OutlinedTextField(
-                            value = discountInput,
-                            onValueChange = { input ->
-                                if (input.isEmpty() || input.all { it.isDigit() || it == '.' }) {
-                                    discountInput = input
-                                }
-                            },
-                            label = { Text(if (discountTypeIsPercentage) "Discount (%)" else "Discount (NPR)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            TextButton(
-                                onClick = { discountTypeIsPercentage = false },
-                                colors = ButtonDefaults.textButtonColors(
-                                    containerColor = if (!discountTypeIsPercentage) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                    contentColor = if (!discountTypeIsPercentage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Text("NPR", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            TextButton(
-                                onClick = { discountTypeIsPercentage = true },
-                                colors = ButtonDefaults.textButtonColors(
-                                    containerColor = if (discountTypeIsPercentage) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                    contentColor = if (discountTypeIsPercentage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Text("%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    if (isDiscountCapped) {
-                        Text(
-                            text = "⚠️ Discount capped to NPR ${String.format("%.2f", maxDiscount)} to keep price above the cost of NPR ${String.format("%.2f", cartCost)}.",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    
-                    if (discountAmount > 0.0) {
-                        val originalTotal = cart.entries.sumOf { it.key.sellingPrice * it.value }
-                        val finalDiscounted = (originalTotal - discountAmount).coerceAtLeast(0.0)
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("Original Subtotal:", style = MaterialTheme.typography.bodySmall)
-                                    Text("NPR ${String.format("%.2f", originalTotal)}", style = MaterialTheme.typography.bodySmall, textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("Discount Applied:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                    Text("- NPR ${String.format("%.2f", discountAmount)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("New Total:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                    Text("NPR ${String.format("%.2f", finalDiscounted)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                }
+                        if (customers.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text(com.example.util.t("no_customers_store_credit", viewModel)) },
+                                onClick = { customerDropdownExpanded = false }
+                            )
+                        } else {
+                            customers.forEach { customer ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(customer.name, fontWeight = FontWeight.Bold)
+                                            Text("Phone: ${customer.phone}" + if (!customer.address.isNullOrBlank()) " | Addr: ${customer.address}" else "", fontSize = 11.sp, color = Color.Gray)
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedCustomerIdForCredit = customer.id
+                                        customerPhone = customer.phone
+                                        customerDropdownExpanded = false
+                                    }
+                                )
                             }
                         }
                     }
                 }
-            },
-            confirmButton = {
-                val canConfirm = when (selectedPaymentMode) {
+
+                if (selectedPaymentMode != "Online") {
+                    OutlinedTextField(
+                        value = customerPhone,
+                        onValueChange = { customerPhone = it },
+                        label = { Text(com.example.util.t("customer_mobile_whatsapp", viewModel)) },
+                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // 2. High-contrast Segmented Buttons for Payment Mode Selector
+                Text(com.example.util.t("select_payment_mode", viewModel), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                val paymentModes = remember(loggedInUser) {
+                    val modes = mutableListOf("Cash", "Online")
+                    if (loggedInUser?.isSuperAdmin == true || loggedInUser?.canManageStoreCredit == true) {
+                        modes.add("Credit")
+                    }
+                    modes
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .padding(4.dp)
+                ) {
+                    paymentModes.forEach { mode ->
+                        val isSelected = selectedPaymentMode == mode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                                .clickable { 
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    selectedPaymentMode = mode 
+                                }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val displayModeName = when (mode) {
+                                "Cash" -> com.example.util.t("cash", viewModel)
+                                "Online" -> com.example.util.t("online", viewModel)
+                                "Credit" -> com.example.util.t("credit", viewModel)
+                                else -> mode
+                            }
+                            Text(
+                                text = displayModeName,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                if (selectedPaymentMode == "Online") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = com.example.util.t("enter_online_payment_details", viewModel),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    OutlinedTextField(
+                        value = customerPhone,
+                        onValueChange = { customerPhone = it },
+                        label = { Text(com.example.util.t("payment_phone_required", viewModel)) },
+                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = paymentTransactionId,
+                        onValueChange = { paymentTransactionId = it },
+                        label = { Text(com.example.util.t("transaction_id_required", viewModel)) },
+                        leadingIcon = { Icon(Icons.Default.Receipt, contentDescription = "Transaction ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (selectedPaymentMode == "Credit" && selectedCustomerIdForCredit == null) {
+                    Text(
+                        text = com.example.util.t("credit_mode_customer_warning", viewModel),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (selectedPaymentMode == "Online" && 
+                    (customerPhone.isBlank() || paymentTransactionId.isBlank())) {
+                    Text(
+                        text = com.example.util.t("online_details_missing_warning", viewModel),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Discount Panel
+                Text(com.example.util.t("apply_discount_optional", viewModel), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = discountInput,
+                        onValueChange = { input ->
+                            if (input.isEmpty() || input.all { it.isDigit() || it == '.' }) {
+                                discountInput = input
+                            }
+                        },
+                        label = { Text(if (discountTypeIsPercentage) com.example.util.t("discount_percentage", viewModel) else com.example.util.t("discount_amount", viewModel)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        TextButton(
+                            onClick = { discountTypeIsPercentage = false },
+                            colors = ButtonDefaults.textButtonColors(
+                                containerColor = if (!discountTypeIsPercentage) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                contentColor = if (!discountTypeIsPercentage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text("NPR", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = { discountTypeIsPercentage = true },
+                            colors = ButtonDefaults.textButtonColors(
+                                containerColor = if (discountTypeIsPercentage) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                contentColor = if (discountTypeIsPercentage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text("%", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                if (isDiscountCapped) {
+                    Text(
+                        text = com.example.util.tNum(String.format(com.example.util.t("discount_capped_warning", viewModel), maxDiscount, cartCost), viewModel),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 3. Prominent, modern, pill-shaped FAB to "Complete Sale & Print" with a haptic feel
+                val canConfirm = (when (selectedPaymentMode) {
                     "Credit" -> selectedCustomerIdForCredit != null
                     "Online" -> customerPhone.isNotBlank() && paymentTransactionId.isNotBlank()
                     else -> true
+                }) && (cartTotal - discountAmount) >= 1.0
+
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ExtendedFloatingActionButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showCheckoutDialog = false
+                            val finalPaymentMode = if (selectedPaymentMode == "Online") {
+                                "Online (TxID: $paymentTransactionId)"
+                            } else {
+                                selectedPaymentMode
+                            }
+                            viewModel.performCheckout(finalPaymentMode, customerPhone, discountAmount, selectedCustomerIdForCredit)
+                            customerPhone = ""
+                            paymentTransactionId = ""
+                            selectedCustomerIdForCredit = null
+                            discountInput = ""
+                        },
+                        expanded = true,
+                        icon = { Icon(Icons.Default.Print, contentDescription = "Print", tint = if (canConfirm) Color(0xFF1E020A) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)) },
+                        text = { Text(com.example.util.t("complete_sale_print", viewModel), fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp, color = if (canConfirm) Color(0xFF1E020A) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)) },
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .height(54.dp),
+                        shape = RoundedCornerShape(27.dp),
+                        containerColor = if (canConfirm) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                        contentColor = if (canConfirm) Color(0xFF1E020A) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
                 }
-                Button(
-                    onClick = {
-                        showCheckoutDialog = false
-                        val finalPaymentMode = if (selectedPaymentMode == "Online") {
-                            "Online (TxID: $paymentTransactionId)"
-                        } else {
-                            selectedPaymentMode
-                        }
-                        viewModel.performCheckout(finalPaymentMode, customerPhone, discountAmount, selectedCustomerIdForCredit)
+
+                TextButton(
+                    onClick = { 
+                        showCheckoutDialog = false 
+                        selectedCustomerIdForCredit = null
                         customerPhone = ""
                         paymentTransactionId = ""
-                        selectedCustomerIdForCredit = null
                         discountInput = ""
                     },
-                    enabled = canConfirm
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
-                    Text("Confirm Checkout")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showCheckoutDialog = false 
-                    selectedCustomerIdForCredit = null
-                    customerPhone = ""
-                    paymentTransactionId = ""
-                    discountInput = ""
-                }) {
-                    Text("Cancel")
+                    Text(com.example.util.t("cancel_transaction", viewModel), color = MaterialTheme.colorScheme.error)
                 }
             }
-        )
+        }
     }
 
     // --- Role Unlock Pin Dialog ---
     if (showRoleUnlockDialog) {
         AlertDialog(
             onDismissRequest = { showRoleUnlockDialog = false },
-            title = { Text("Enter Admin PIN", fontWeight = FontWeight.Bold) },
+            title = { Text(com.example.util.t("enter_admin_pin", viewModel), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Please enter the Admin PIN to switch to Administrator mode.")
+                    Text(com.example.util.t("enter_admin_pin_desc", viewModel))
                     OutlinedTextField(
                         value = roleUnlockPin,
                         onValueChange = {
                             roleUnlockPin = it
                             roleUnlockError = false
                         },
-                        label = { Text("Admin PIN") },
+                        label = { Text(com.example.util.t("admin_pin_label", viewModel)) },
                         isError = roleUnlockError,
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (roleUnlockError) {
-                        Text("Incorrect PIN. Please try default '1234'.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        Text(com.example.util.t("incorrect_admin_pin", viewModel), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
@@ -1068,12 +1278,12 @@ fun DashboardScreen(
                         }
                     }
                 ) {
-                    Text("Verify")
+                    Text(com.example.util.t("verify", viewModel))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRoleUnlockDialog = false }) {
-                    Text("Cancel")
+                    Text(com.example.util.t("cancel", viewModel))
                 }
             }
         )
@@ -1087,7 +1297,7 @@ fun DashboardScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.ReceiptLong, contentDescription = "Receipt", tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Bill Generated Successfully!", fontWeight = FontWeight.Bold)
+                    Text(com.example.util.t("bill_generated_success", viewModel), fontWeight = FontWeight.Bold)
                 }
             },
             text = {
@@ -1128,7 +1338,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Share")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Share Receipt / Send")
+                        Text(com.example.util.t("share_receipt_send", viewModel))
                     }
 
                     Button(
@@ -1152,7 +1362,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.Send, contentDescription = "WhatsApp", tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Send via WhatsApp", color = Color.White)
+                        Text(com.example.util.t("share_via_whatsapp", viewModel), color = Color.White)
                     }
 
                     Button(
@@ -1179,7 +1389,7 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.Email, contentDescription = "Email", tint = MaterialTheme.colorScheme.onPrimary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Send via Email")
+                        Text(com.example.util.t("send_via_email", viewModel))
                     }
 
                     Button(
@@ -1195,14 +1405,14 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.Print, contentDescription = "Print")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Print Bill / Save as PDF")
+                        Text(com.example.util.t("print_bill", viewModel))
                     }
 
                     TextButton(
                         onClick = { viewModel.dismissReceipt() },
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        Text("Close / New Bill")
+                        Text(com.example.util.t("close_new_bill", viewModel))
                     }
                 }
             }
@@ -1214,6 +1424,8 @@ fun DashboardScreen(
 fun CartItemRow(
     product: Product,
     quantity: Int,
+    barcodeLabel: String,
+    priceEachLabel: String,
     onQuantityChanged: (Int) -> Unit,
     onDelete: () -> Unit
 ) {
@@ -1248,7 +1460,7 @@ fun CartItemRow(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                     Text(
-                        text = "Bar: ${product.barcode}",
+                        text = barcodeLabel,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontFamily = FontFamily.Monospace
@@ -1256,7 +1468,7 @@ fun CartItemRow(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "NPR ${String.format("%.2f", product.sellingPrice)} each",
+                    text = priceEachLabel,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.secondary
                 )

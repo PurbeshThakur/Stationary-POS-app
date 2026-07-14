@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -37,6 +38,18 @@ fun InventoryScreen(
 ) {
     val products by viewModel.allProducts.collectAsState()
     val lowStockList by viewModel.lowStockProducts.collectAsState()
+    val currentRole by viewModel.currentUserRole.collectAsState()
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            sendLowStockNotification(context, lowStockList)
+        } else {
+            android.widget.Toast.makeText(context, "Notification permission is required for alerts.", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf("All") }
@@ -69,348 +82,503 @@ fun InventoryScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF4A4458)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Inventory2,
-                                contentDescription = "Inventory",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Column {
-                            Text(
-                                "Inventory Catalog",
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                "Stock Levels & Pricing",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
-                                color = Color(0xFF938F99)
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    val currentRole by viewModel.currentUserRole.collectAsState()
-                    val loggedInUser by viewModel.loggedInUser.collectAsState()
-                    var showProfileMenu by remember { mutableStateOf(false) }
-
-                    com.example.util.LanguageToggle(
-                        viewModel = viewModel,
-                        modifier = Modifier.padding(end = 8.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF020104), // Extreme deep pitch black
+                        Color(0xFF0B061A), // Deep neon purple ambient core
+                        Color(0xFF030206)  // Pitch black base
                     )
+                )
+            )
+    ) {
+        // Ambient glow spotlights (Behance / Dribbble SaaS aesthetic)
+        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFBD00FF).copy(alpha = 0.12f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.85f, size.height * 0.15f),
+                    radius = size.width * 0.6f
+                )
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF00E5FF).copy(alpha = 0.08f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.15f, size.height * 0.75f),
+                    radius = size.width * 0.7f
+                )
+            )
+        }
 
-                    if (currentRole == com.example.ui.UserRole.ADMIN) {
-                        IconButton(onClick = { showCampaignDialog = true }) {
-                            Icon(Icons.Default.Campaign, contentDescription = "SMS Offer Campaign", tint = MaterialTheme.colorScheme.primary)
-                        }
-                        IconButton(onClick = { showAddDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Product", tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-
-                    Box {
-                        IconButton(
-                            onClick = { showProfileMenu = true },
-                            modifier = Modifier.padding(end = 8.dp)
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
-                                    .background(Color(loggedInUser?.avatarColor ?: 0xFF6200EE), CircleShape)
-                                    .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                                    .size(36.dp)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(Color(0xFFBD00FF), Color(0xFF00E5FF).copy(alpha = 0.5f))
+                                        ),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(1.dp)
+                                    .background(Color(0xFF0A0911), RoundedCornerShape(9.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
+                                Icon(
+                                    imageVector = Icons.Default.Inventory2,
+                                    contentDescription = "Inventory Icon",
+                                    tint = Color(0xFFBD00FF),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    text = loggedInUser?.fullName?.take(1)?.uppercase() ?: "U",
-                                    color = Color.White,
+                                    "PURBESH STATIONERY",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    letterSpacing = 1.sp,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    "Premium Inventory Catalog",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFB5AEC4),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    },
+                    actions = {
+                        val loggedInUser by viewModel.loggedInUser.collectAsState()
+                        var showProfileMenu by remember { mutableStateOf(false) }
+
+                        com.example.util.LanguageToggle(
+                            viewModel = viewModel,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+
+                        if (currentRole == com.example.ui.UserRole.ADMIN) {
+                            IconButton(onClick = { showCampaignDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Campaign,
+                                    contentDescription = "SMS Offer Campaign",
+                                    tint = Color(0xFF00E5FF)
+                                )
+                            }
+                            IconButton(onClick = { showAddDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Product",
+                                    tint = Color(0xFFBD00FF)
                                 )
                             }
                         }
 
-                        DropdownMenu(
-                            expanded = showProfileMenu,
-                            onDismissRequest = { showProfileMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(loggedInUser?.fullName ?: "Unknown User", fontWeight = FontWeight.Bold)
-                                        Text(
-                                            text = currentRole.label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                },
-                                onClick = {},
-                                enabled = false
-                            )
-                            
-                            Divider(modifier = Modifier.padding(vertical = 4.dp))
-
-                            DropdownMenuItem(
-                                leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "Log Out", tint = MaterialTheme.colorScheme.error) },
-                                text = { Text("Log Out / Switch Profile", color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    showProfileMenu = false
-                                    viewModel.logout()
+                        Box {
+                            IconButton(
+                                onClick = { showProfileMenu = true },
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(Color(loggedInUser?.avatarColor ?: 0xFFBD00FF), CircleShape)
+                                        .border(1.5.dp, Color(0xFF00E5FF), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = loggedInUser?.fullName?.take(1)?.uppercase() ?: "U",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
                                 }
-                            )
+                            }
+
+                            DropdownMenu(
+                                expanded = showProfileMenu,
+                                onDismissRequest = { showProfileMenu = false },
+                                modifier = Modifier
+                                    .background(Color(0xFF0C0A18))
+                                    .border(1.dp, Color(0xFFBD00FF).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(loggedInUser?.fullName ?: "Unknown User", fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text(
+                                                text = currentRole.label,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color(0xFF00E5FF),
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    },
+                                    onClick = {},
+                                    enabled = false
+                                )
+                                
+                                Divider(modifier = Modifier.padding(vertical = 4.dp), color = Color(0xFF2F2A4A))
+
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Default.Logout, contentDescription = "Log Out", tint = Color(0xFFFF007F)) },
+                                    text = { Text("Log Out / Switch Profile", color = Color(0xFFFF007F)) },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        viewModel.logout()
+                                    }
+                                )
+                            }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    modifier = Modifier.border(
+                        width = 1.dp,
+                        brush = Brush.verticalGradient(
+                            listOf(Color.Transparent, Color(0xFF2F2A4A).copy(alpha = 0.2f))
+                        ),
+                        shape = androidx.compose.ui.graphics.RectangleShape
+                    )
                 )
-            )
-        },
-        floatingActionButton = {
-            val currentRole by viewModel.currentUserRole.collectAsState()
-            if (currentRole == com.example.ui.UserRole.ADMIN) {
-                FloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Product")
-                }
-            }
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-        ) {
-            val currentRole by viewModel.currentUserRole.collectAsState()
-            
-            if (currentRole == com.example.ui.UserRole.CASHIER) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            },
+            floatingActionButton = {
+                if (currentRole == com.example.ui.UserRole.ADMIN) {
+                    Box(
+                        modifier = Modifier
+                            .padding(bottom = 16.dp)
+                            .size(64.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "Read Only",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Column {
-                            Text(
-                                text = "Read-Only Mode (Cashier Mode)",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                            Text(
-                                text = "Catalog changes, pricing adjustments and stock additions require Admin PIN.",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else {
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Search stationery items, barcode or category...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
-                        }
-                    }
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            if (lowStockList.isNotEmpty()) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                        // Ambient glow halo
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
-                                .background(MaterialTheme.colorScheme.errorContainer, CircleShape),
+                                .fillMaxSize()
+                                .background(Color(0xFFBD00FF).copy(alpha = 0.25f), CircleShape)
+                        )
+                        // Main button
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFFBD00FF), Color(0xFFFF007F))
+                                    )
+                                )
+                                .clickable { showAddDialog = true }
+                                .border(1.5.dp, Color(0xFF00E5FF), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.NotificationsActive, contentDescription = "Alert", tint = MaterialTheme.colorScheme.error)
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Low Stock Push Alerts",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Product",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
                             )
-                            Text(
-                                text = "${lowStockList.size} items are below safe thresholds. Click to trigger notification alert.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        val context = LocalContext.current
-                        Button(
-                            onClick = {
-                                val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                                val channelId = "low_stock_alerts_channel"
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                    val channel = android.app.NotificationChannel(
-                                        channelId, 
-                                        "Low Stock Alerts", 
-                                        android.app.NotificationManager.IMPORTANCE_HIGH
-                                    )
-                                    notificationManager.createNotificationChannel(channel)
-                                }
-                                val messageText = lowStockList.take(3).joinToString { it.name } + if (lowStockList.size > 3) " and others" else ""
-                                val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                                    .setContentTitle("⚠️ Purbesh Stationery Low Stock")
-                                    .setContentText("$messageText are running critically low!")
-                                    .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
-                                    .setAutoCancel(true)
-                                
-                                notificationManager.notify(101, builder.build())
-                                android.widget.Toast.makeText(context, "System push notification triggered!", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Text("Alert", color = Color.White)
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Category filter chips
-            Text("Filter by Category", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(6.dp))
-            ScrollableTabRow(
-                selectedTabIndex = categories.indexOf(selectedCategoryFilter).coerceAtLeast(0),
-                edgePadding = 0.dp,
-                divider = {},
-                indicator = {}
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp)
             ) {
-                categories.forEach { cat ->
-                    val isSelected = selectedCategoryFilter == cat
-                    Tab(
-                        selected = isSelected,
-                        onClick = { selectedCategoryFilter = cat },
-                        modifier = Modifier.padding(bottom = 8.dp)
+                if (currentRole == com.example.ui.UserRole.CASHIER) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFFFF007F).copy(alpha = 0.08f))
+                            .border(1.dp, Color(0xFFFF007F).copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                            .padding(12.dp)
                     ) {
-                        SuggestionChip(
-                            onClick = { selectedCategoryFilter = cat },
-                            label = { Text(cat) },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            ),
-                            border = SuggestionChipDefaults.suggestionChipBorder(
-                                enabled = true,
-                                borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Read Only",
+                                tint = Color(0xFFFF007F)
                             )
-                        )
+                            Column {
+                                Text(
+                                    text = "Read-Only Cashier Mode",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFFF007F)
+                                )
+                                Text(
+                                    text = "Pricing, stock additions and catalog edits require Admin permissions.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFB5AEC4)
+                                )
+                            }
+                        }
                     }
+                } else {
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Summary counts
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${filteredProducts.size} Items Listed",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                // Sleek glassmorphic search bar
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search stationery catalog, barcode or category...", color = Color(0xFFB5AEC4).copy(alpha = 0.5f)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFFBD00FF)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color(0xFFFF007F))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+                        focusedContainerColor = Color(0xFF131124).copy(alpha = 0.65f),
+                        unfocusedContainerColor = Color(0xFF0F0E1C).copy(alpha = 0.4f),
+                        focusedBorderColor = Color(0xFFBD00FF),
+                        unfocusedBorderColor = Color(0xFF2F2A4A).copy(alpha = 0.7f),
+                        cursorColor = Color(0xFFBD00FF)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.horizontalGradient(
+                                listOf(Color(0xFFBD00FF).copy(alpha = 0.15f), Color(0xFF00E5FF).copy(alpha = 0.1f))
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        )
                 )
+
                 if (lowStockList.isNotEmpty()) {
-                    Text(
-                        text = "⚠️ ${lowStockList.size} Low Stock Warnings",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Product List
-            if (filteredProducts.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.MenuBook, contentDescription = "No Products", tint = Color.LightGray, modifier = Modifier.size(64.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("No stationery products match the search.", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFFFF007F).copy(alpha = 0.08f))
+                            .border(
+                                width = 1.dp,
+                                brush = Brush.horizontalGradient(
+                                    listOf(Color(0xFFFF007F).copy(alpha = 0.5f), Color(0xFFBD00FF).copy(alpha = 0.2f))
+                                ),
+                                shape = RoundedCornerShape(18.dp)
+                            )
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(Color(0xFFFF007F).copy(alpha = 0.15f), CircleShape)
+                                    .border(1.dp, Color(0xFFFF007F).copy(alpha = 0.3f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsActive,
+                                    contentDescription = "Alert",
+                                    tint = Color(0xFFFF007F),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Low Stock Push Alerts",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFFFF007F)
+                                )
+                                Text(
+                                    text = "${lowStockList.size} items are below safe thresholds. Trigger system alerts.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFB5AEC4)
+                                )
+                            }
+                            val context = LocalContext.current
+                            Button(
+                                onClick = {
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                                context,
+                                                android.Manifest.permission.POST_NOTIFICATIONS
+                                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            sendLowStockNotification(context, lowStockList)
+                                        } else {
+                                            permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                    } else {
+                                        sendLowStockNotification(context, lowStockList)
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFFF007F),
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.height(34.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                            ) {
+                                Text("Alert", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 80.dp)
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Premium Category Tab Row (Dribbble Glass style)
+                Text(
+                    text = "STATIONERY CATALOGS",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFFBD00FF),
+                    letterSpacing = 1.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                ScrollableTabRow(
+                    selectedTabIndex = categories.indexOf(selectedCategoryFilter).coerceAtLeast(0),
+                    edgePadding = 0.dp,
+                    divider = {},
+                    indicator = {},
+                    containerColor = Color.Transparent,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(filteredProducts) { product ->
-                        val currentRole by viewModel.currentUserRole.collectAsState()
-                        ProductItemCard(
-                            product = product,
-                            isAdmin = currentRole == com.example.ui.UserRole.ADMIN,
-                            onEdit = { showEditDialog = product },
-                            onDelete = { showDeleteConfirm = product },
-                            onGenerateLabel = { showLabelGeneratorForProduct = product }
-                        )
+                    categories.forEach { cat ->
+                        val isSelected = selectedCategoryFilter == cat
+                        Tab(
+                            selected = isSelected,
+                            onClick = { selectedCategoryFilter = cat },
+                            modifier = Modifier.padding(bottom = 8.dp, end = 6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelected) {
+                                            Brush.horizontalGradient(
+                                                listOf(Color(0xFFBD00FF).copy(alpha = 0.35f), Color(0xFF00E5FF).copy(alpha = 0.15f))
+                                            )
+                                        } else {
+                                            Brush.horizontalGradient(
+                                                listOf(Color(0xFF131124).copy(alpha = 0.5f), Color(0xFF131124).copy(alpha = 0.2f))
+                                            )
+                                        }
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Color(0xFFBD00FF) else Color(0xFF2F2A4A).copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = cat,
+                                    color = if (isSelected) Color.White else Color(0xFFB5AEC4),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Summary metrics line
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${filteredProducts.size} stationery items cataloged",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFB5AEC4)
+                    )
+                    if (lowStockList.isNotEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(modifier = Modifier.size(6.dp).background(Color(0xFFFF007F), CircleShape))
+                            Text(
+                                text = "${lowStockList.size} alerts active",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFF007F)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Product list
+                if (filteredProducts.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MenuBook,
+                                contentDescription = "No Products",
+                                tint = Color(0xFF2F2A4A),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Text(
+                                text = "No stationery items match filters",
+                                color = Color(0xFFB5AEC4),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 90.dp)
+                    ) {
+                        items(filteredProducts, key = { it.id }) { product ->
+                            ProductItemCard(
+                                product = product,
+                                isAdmin = currentRole == com.example.ui.UserRole.ADMIN,
+                                viewModel = viewModel,
+                                onEdit = { showEditDialog = product },
+                                onDelete = { showDeleteConfirm = product },
+                                onGenerateLabel = { showLabelGeneratorForProduct = product }
+                            )
+                        }
                     }
                 }
             }
@@ -420,7 +588,8 @@ fun InventoryScreen(
     // --- Add Product Dialog ---
     if (showAddDialog) {
         ProductFormDialog(
-            title = "Add New Stationery Item",
+            viewModel = viewModel,
+            title = com.example.util.t("add_new_stationery_item", viewModel),
             productsList = products,
             onDismiss = { showAddDialog = false },
             onSave = { name, barcode, cat, cp, sp, stock, threshold ->
@@ -530,7 +699,8 @@ fun InventoryScreen(
     if (showEditDialog != null) {
         val prodToEdit = showEditDialog!!
         ProductFormDialog(
-            title = "Edit Stationery Item",
+            viewModel = viewModel,
+            title = com.example.util.t("edit_stationery_item", viewModel),
             product = prodToEdit,
             productsList = products,
             onDismiss = { showEditDialog = null },
@@ -907,118 +1077,316 @@ fun LabelGeneratorDialog(
 }
 
 @Composable
+fun BarcodeGraphic(
+    barcode: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0xFF2F2A4A).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.QrCode,
+            contentDescription = null,
+            tint = Color(0xFFBD00FF),
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        // Styled barcode lines
+        Row(
+            modifier = Modifier.weight(1f, fill = false),
+            horizontalArrangement = Arrangement.spacedBy(1.5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(1.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(3.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(1.dp).height(14.dp).background(Color.White.copy(alpha = 0.2f)))
+            Box(modifier = Modifier.width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(1.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(4.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.2f)))
+            Box(modifier = Modifier.width(1.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(3.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+            Box(modifier = Modifier.width(2.dp).height(14.dp).background(Color.White.copy(alpha = 0.8f)))
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = barcode,
+            fontSize = 11.sp,
+            color = Color(0xFFB5AEC4),
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
 fun ProductItemCard(
     product: Product,
     isAdmin: Boolean,
+    viewModel: InventoryViewModel,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onGenerateLabel: () -> Unit
 ) {
     val isLowStock = product.stockQuantity <= product.minStockThreshold
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isLowStock) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
-        ),
-        border = if (isLowStock) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)) else null
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = product.name,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f, fill = false),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF0F0E1C).copy(alpha = 0.65f))
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    listOf(
+                        if (isLowStock) Color(0xFFFF007F).copy(alpha = 0.5f) else Color(0xFFBD00FF).copy(alpha = 0.35f),
+                        Color.Transparent
                     )
-                    if (isLowStock) {
-                        Spacer(modifier = Modifier.width(6.dp))
+                ),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header row: Title, alert, category, and action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = product.name,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (isLowStock) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFF007F).copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                                    .border(1.dp, Color(0xFFFF007F).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "LOW STOCK",
+                                    color = Color(0xFFFF007F),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Category pill
                         Box(
                             modifier = Modifier
-                                .background(MaterialTheme.colorScheme.error, RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .background(Color(0xFF1E1A3A).copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .border(1.dp, Color(0xFF2F2A4A).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Text("LOW STOCK", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = product.category,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFFB5AEC4),
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = product.category,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                    Text(
-                        text = "Bar: ${product.barcode}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
+                // Apple/Linear styled horizontal control block
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(Color(0xFF141226).copy(alpha = 0.8f), RoundedCornerShape(10.dp))
+                        .border(1.dp, Color(0xFF2F2A4A).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .padding(4.dp)
                 ) {
-                    Column {
-                        Text("STOCK LEVEL", fontSize = 10.sp, color = Color.Gray)
-                        Text(
-                            text = "${product.stockQuantity} units",
-                            fontWeight = FontWeight.Bold,
-                            color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    IconButton(
+                        onClick = onGenerateLabel,
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = "Label QR generator",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
-
-                    Column {
-                        Text("SELLING PRICE", fontSize = 10.sp, color = Color.Gray)
-                        Text(
-                            text = "NPR ${String.format("%.2f", product.sellingPrice)}",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-
-                    Column {
-                        Text("COST PRICE", fontSize = 10.sp, color = Color.Gray)
-                        Text(
-                            text = "NPR ${String.format("%.2f", product.costPrice)}",
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Gray
-                        )
+                    if (isAdmin) {
+                        IconButton(
+                            onClick = onEdit,
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit item",
+                                tint = Color(0xFFBD00FF),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete item",
+                                tint = Color(0xFFFF007F),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                IconButton(onClick = onGenerateLabel) {
-                    Icon(Icons.Default.QrCode, contentDescription = "Generate Label", tint = MaterialTheme.colorScheme.secondary)
+            // Styled Simulated Barcode Graphic Representation
+            BarcodeGraphic(barcode = product.barcode, modifier = Modifier.fillMaxWidth())
+
+            // Stock Capacity Level Track Indicator
+            val maxStockCap = (product.minStockThreshold * 3).coerceAtLeast(10)
+            val levelRatio = (product.stockQuantity.toFloat() / maxStockCap.toFloat()).coerceIn(0f, 1f)
+            val fillBrush = Brush.horizontalGradient(
+                if (isLowStock) {
+                    listOf(Color(0xFFFF007F), Color(0xFFFF5E97))
+                } else {
+                    listOf(Color(0xFFBD00FF), Color(0xFF00E5FF))
                 }
-                if (isAdmin) {
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "STOCK CAPACITY INDICATOR",
+                        fontSize = 9.sp,
+                        color = Color(0xFFB5AEC4),
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "${com.example.util.tNum(product.stockQuantity, viewModel)} / ${com.example.util.tNum(maxStockCap, viewModel)} units",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isLowStock) Color(0xFFFF007F) else Color(0xFF00E5FF)
+                    )
+                }
+                // Glass track
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(Color(0xFF131124), RoundedCornerShape(3.dp))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(levelRatio)
+                            .background(fillBrush, RoundedCornerShape(3.dp))
+                    )
+                }
+            }
+
+            // Subtle divider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0xFF2F2A4A).copy(alpha = 0.3f))
+            )
+
+            // Prices & profit markup stats
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Selling Price
+                Column {
+                    Text(
+                        text = "SELLING PRICE",
+                        fontSize = 9.sp,
+                        color = Color(0xFFB5AEC4),
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "NPR ${com.example.util.tNum(String.format("%.2f", product.sellingPrice), viewModel)}",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp,
+                        color = Color(0xFF00E5FF)
+                    )
+                }
+
+                // Cost Price
+                Column {
+                    Text(
+                        text = "COST PRICE",
+                        fontSize = 9.sp,
+                        color = Color(0xFFB5AEC4),
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "NPR ${com.example.util.tNum(String.format("%.2f", product.costPrice), viewModel)}",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Color(0xFFB5AEC4)
+                    )
+                }
+
+                // Estimated Gross Markup Percentage
+                val profitDiff = product.sellingPrice - product.costPrice
+                val percentMarkup = if (product.costPrice > 0.0) (profitDiff / product.costPrice) * 100.0 else 0.0
+                val markupColor = if (profitDiff >= 0.0) Color(0xFF00FFCC) else Color(0xFFFF007F)
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "EST. MARKUP",
+                        fontSize = 9.sp,
+                        color = Color(0xFFB5AEC4),
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .background(markupColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+                            .border(1.dp, markupColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "${if (profitDiff >= 0.0) "+" else ""}${com.example.util.tNum(String.format("%.1f", percentMarkup), viewModel)}%",
+                            color = markupColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
                     }
                 }
             }
@@ -1029,6 +1397,7 @@ fun ProductItemCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductFormDialog(
+    viewModel: InventoryViewModel,
     title: String,
     product: Product? = null,
     productsList: List<Product> = emptyList(),
@@ -1055,10 +1424,26 @@ fun ProductFormDialog(
     var customCategoryText by remember { mutableStateOf(if (isCustomCategory) category else "") }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val nameBarcodeErrorText = com.example.util.t("error_name_barcode_required", viewModel)
+    val invalidNumbersErrorText = com.example.util.t("error_invalid_numbers", viewModel)
+
+    val customTextFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+        focusedContainerColor = Color(0xFF131124).copy(alpha = 0.8f),
+        unfocusedContainerColor = Color(0xFF0F0E1C).copy(alpha = 0.4f),
+        focusedBorderColor = Color(0xFFBD00FF),
+        unfocusedBorderColor = Color(0xFF2F2A4A).copy(alpha = 0.7f),
+        cursorColor = Color(0xFFBD00FF),
+        focusedLabelColor = Color(0xFFBD00FF),
+        unfocusedLabelColor = Color(0xFFB5AEC4)
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
+        title = { Text(title, fontWeight = FontWeight.Bold, color = Color.White) },
+        containerColor = Color(0xFF0D0B1C),
+        textContentColor = Color.White,
         text = {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
@@ -1067,15 +1452,17 @@ fun ProductFormDialog(
                 if (errorMessage != null) {
                     item {
                         Surface(
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFFF007F).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF007F)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 text = errorMessage!!,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                color = Color(0xFFFF007F),
                                 fontSize = 12.sp,
-                                modifier = Modifier.padding(8.dp)
+                                modifier = Modifier.padding(10.dp),
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -1085,8 +1472,10 @@ fun ProductFormDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Product Name") },
+                        label = { Text(com.example.util.t("product_name", viewModel)) },
                         singleLine = true,
+                        colors = customTextFieldColors,
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -1099,15 +1488,17 @@ fun ProductFormDialog(
                         OutlinedTextField(
                             value = barcode,
                             onValueChange = { barcode = it },
-                            label = { Text("Barcode Number") },
+                            label = { Text(com.example.util.t("barcode_number", viewModel)) },
                             singleLine = true,
+                            colors = customTextFieldColors,
+                            shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                             trailingIcon = {
                                 IconButton(onClick = { showCameraScanner = !showCameraScanner }) {
                                     Icon(
                                         imageVector = if (showCameraScanner) Icons.Default.Close else Icons.Default.QrCodeScanner,
-                                        contentDescription = "Scan with Camera",
-                                        tint = if (showCameraScanner) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        contentDescription = com.example.util.t("scan_camera", viewModel),
+                                        tint = if (showCameraScanner) Color(0xFFFF007F) else Color(0xFF00E5FF)
                                     )
                                 }
                             },
@@ -1121,9 +1512,9 @@ fun ProductFormDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Generate:",
+                                text = com.example.util.t("generate", viewModel) + ":",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color(0xFFB5AEC4),
                                 fontWeight = FontWeight.Medium
                             )
 
@@ -1133,18 +1524,22 @@ fun ProductFormDialog(
                                     val randomBarcode = (8901000000000L + (100000000..999999999).random()).toString()
                                     barcode = randomBarcode
                                 },
-                                label = { Text("1D Barcode", fontSize = 11.sp) },
+                                label = { Text(com.example.util.t("one_d_barcode", viewModel), fontSize = 11.sp, color = Color(0xFFBD00FF)) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.QrCode,
-                                        contentDescription = "Generate 1D Barcode",
-                                        modifier = Modifier.size(16.dp)
+                                        contentDescription = com.example.util.t("one_d_barcode", viewModel),
+                                        tint = Color(0xFFBD00FF),
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 },
                                 shape = RoundedCornerShape(8.dp),
                                 colors = AssistChipDefaults.assistChipColors(
-                                    labelColor = MaterialTheme.colorScheme.primary,
-                                    leadingIconContentColor = MaterialTheme.colorScheme.primary
+                                    containerColor = Color(0xFFBD00FF).copy(alpha = 0.08f)
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = Color(0xFFBD00FF).copy(alpha = 0.4f)
                                 )
                             )
 
@@ -1160,18 +1555,22 @@ fun ProductFormDialog(
                                     val randomSuffix = (1000..9999).random()
                                     barcode = "$prefix-$randomSuffix"
                                 },
-                                label = { Text("QR Code SKU", fontSize = 11.sp) },
+                                label = { Text(com.example.util.t("qr_sku", viewModel), fontSize = 11.sp, color = Color(0xFF00E5FF)) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.QrCodeScanner,
-                                        contentDescription = "Generate QR SKU",
-                                        modifier = Modifier.size(16.dp)
+                                        contentDescription = com.example.util.t("qr_sku", viewModel),
+                                        tint = Color(0xFF00E5FF),
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 },
                                 shape = RoundedCornerShape(8.dp),
                                 colors = AssistChipDefaults.assistChipColors(
-                                    labelColor = MaterialTheme.colorScheme.secondary,
-                                    leadingIconContentColor = MaterialTheme.colorScheme.secondary
+                                    containerColor = Color(0xFF00E5FF).copy(alpha = 0.08f)
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    width = 1.dp,
+                                    color = Color(0xFF00E5FF).copy(alpha = 0.4f)
                                 )
                             )
                         }
@@ -1185,16 +1584,16 @@ fun ProductFormDialog(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Scan product barcode or QR code with camera",
+                                    text = com.example.util.t("scan_instruction", viewModel),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.secondary
+                                    color = Color(0xFFBD00FF)
                                 )
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(180.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                                        .border(2.dp, Color(0xFFBD00FF), RoundedCornerShape(12.dp))
                                 ) {
                                     CameraScannerView(onBarcodeDetected = { scanned ->
                                         barcode = scanned
@@ -1209,9 +1608,9 @@ fun ProductFormDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Emulator? Simulate Scan:",
+                                        text = com.example.util.t("emulator_scan", viewModel),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = Color(0xFFB5AEC4)
                                     )
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Button(
@@ -1221,10 +1620,10 @@ fun ProductFormDialog(
                                                 showCameraScanner = false
                                             },
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1A3A), contentColor = Color.White),
                                             modifier = Modifier.height(32.dp)
                                         ) {
-                                            Text("Random Barcode", fontSize = 10.sp)
+                                            Text(com.example.util.t("random_barcode", viewModel), fontSize = 10.sp)
                                         }
                                         Button(
                                             onClick = {
@@ -1233,10 +1632,10 @@ fun ProductFormDialog(
                                                 showCameraScanner = false
                                             },
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F0E1C), contentColor = Color.White),
                                             modifier = Modifier.height(32.dp)
                                         ) {
-                                            Text("SKU Alphanumeric", fontSize = 10.sp)
+                                            Text(com.example.util.t("sku_alphanumeric", viewModel), fontSize = 10.sp)
                                         }
                                     }
                                 }
@@ -1257,7 +1656,9 @@ fun ProductFormDialog(
                                     value = category,
                                     onValueChange = {},
                                     readOnly = true,
-                                    label = { Text("Category") },
+                                    label = { Text(com.example.util.t("category", viewModel)) },
+                                    colors = customTextFieldColors,
+                                    shape = RoundedCornerShape(12.dp),
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1265,11 +1666,12 @@ fun ProductFormDialog(
                                 )
                                 ExposedDropdownMenu(
                                     expanded = categoryExpanded,
-                                    onDismissRequest = { categoryExpanded = false }
+                                    onDismissRequest = { categoryExpanded = false },
+                                    modifier = Modifier.background(Color(0xFF0D0B1C))
                                 ) {
                                     dynamicCategories.forEach { cat ->
                                         DropdownMenuItem(
-                                            text = { Text(cat) },
+                                            text = { Text(cat, color = Color.White) },
                                             onClick = {
                                                 category = cat
                                                 categoryExpanded = false
@@ -1289,9 +1691,9 @@ fun ProductFormDialog(
                                         customCategoryText = ""
                                     }
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Add, contentDescription = "Add", tint = Color(0xFFBD00FF), modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Custom Category", fontSize = 12.sp)
+                                    Text(com.example.util.t("add_custom_category", viewModel), fontSize = 12.sp, color = Color(0xFFBD00FF))
                                 }
                             }
                         } else {
@@ -1301,14 +1703,16 @@ fun ProductFormDialog(
                                     customCategoryText = it
                                     category = it
                                 },
-                                label = { Text("Custom Category Name") },
+                                label = { Text(com.example.util.t("custom_category_name", viewModel)) },
                                 singleLine = true,
+                                colors = customTextFieldColors,
+                                shape = RoundedCornerShape(12.dp),
                                 trailingIcon = {
                                     IconButton(onClick = {
                                         isCustomCategory = false
                                         category = "Pens & Pencils"
                                     }) {
-                                        Icon(Icons.Default.Close, contentDescription = "Clear custom")
+                                        Icon(Icons.Default.Close, contentDescription = "Clear custom", tint = Color(0xFFFF007F))
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -1324,9 +1728,9 @@ fun ProductFormDialog(
                                         category = "Pens & Pencils"
                                     }
                                 ) {
-                                    Icon(Icons.Default.List, contentDescription = "Select", modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.List, contentDescription = "Select", tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Select Existing Category", fontSize = 12.sp)
+                                    Text(com.example.util.t("select_existing_category", viewModel), fontSize = 12.sp, color = Color(0xFF00E5FF))
                                 }
                             }
                         }
@@ -1338,16 +1742,20 @@ fun ProductFormDialog(
                         OutlinedTextField(
                             value = costPrice,
                             onValueChange = { costPrice = it },
-                            label = { Text("Cost Price (NPR)") },
+                            label = { Text(com.example.util.t("cost_price_npr", viewModel)) },
                             singleLine = true,
+                            colors = customTextFieldColors,
+                            shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = sellingPrice,
                             onValueChange = { sellingPrice = it },
-                            label = { Text("Selling Price (NPR)") },
+                            label = { Text(com.example.util.t("selling_price_npr", viewModel)) },
                             singleLine = true,
+                            colors = customTextFieldColors,
+                            shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f)
                         )
@@ -1359,16 +1767,20 @@ fun ProductFormDialog(
                         OutlinedTextField(
                             value = stockQuantity,
                             onValueChange = { stockQuantity = it },
-                            label = { Text("Stock Qty") },
+                            label = { Text(com.example.util.t("stock_qty", viewModel)) },
                             singleLine = true,
+                            colors = customTextFieldColors,
+                            shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = minThreshold,
                             onValueChange = { minThreshold = it },
-                            label = { Text("Min Alert Lvl") },
+                            label = { Text(com.example.util.t("min_alert_lvl", viewModel)) },
                             singleLine = true,
+                            colors = customTextFieldColors,
+                            shape = RoundedCornerShape(12.dp),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f)
                         )
@@ -1385,21 +1797,57 @@ fun ProductFormDialog(
                     val threshVal = minThreshold.toIntOrNull()
 
                     if (name.isBlank() || barcode.isBlank()) {
-                        errorMessage = "Product name and barcode are required."
+                        errorMessage = nameBarcodeErrorText
                     } else if (cpVal == null || spVal == null || stockVal == null || threshVal == null) {
-                        errorMessage = "Please enter valid numbers for price, stock, and threshold."
+                        errorMessage = invalidNumbersErrorText
                     } else {
                         onSave(name, barcode, category, cpVal, spVal, stockVal, threshVal)
                     }
-                }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFBD00FF),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(10.dp)
             ) {
-                Text("Save")
+                Text(com.example.util.t("save", viewModel), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            TextButton(
+                onClick = onDismiss
+            ) {
+                Text(com.example.util.t("cancel", viewModel), color = Color(0xFFB5AEC4))
             }
         }
     )
 }
+
+@android.annotation.SuppressLint("MissingPermission")
+private fun sendLowStockNotification(context: android.content.Context, lowStockList: List<com.example.data.Product>) {
+    try {
+        val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "low_stock_alerts_channel"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId, 
+                "Low Stock Alerts", 
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+        val messageText = lowStockList.take(3).joinToString { it.name } + if (lowStockList.size > 3) " and others" else ""
+        val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("⚠️ Purbesh Stationery Low Stock")
+            .setContentText("$messageText are running critically low!")
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+        
+        notificationManager.notify(101, builder.build())
+        android.widget.Toast.makeText(context, "System push notification triggered!", android.widget.Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        android.util.Log.e("InventoryScreen", "Failed to send notification: ${e.message}")
+    }
+}
+
